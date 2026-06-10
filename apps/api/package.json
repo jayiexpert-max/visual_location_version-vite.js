@@ -4,13 +4,16 @@
   "private": true,
   "description": "Visual Location NestJS API",
   "scripts": {
+    "prebuild": "npm run build -w @visual-location/shared",
     "build": "nest build",
+    "prestart:dev": "npm run build -w @visual-location/shared",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/apps/api/src/main",
+    "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix"
   },
   "dependencies": {
+    "@visual-location/shared": "1.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
@@ -41,6 +44,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0"
   }
 }

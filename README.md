@@ -28,10 +28,23 @@ visual_location/
 └── raspi/            # MQTT gateway (migrate from PHP project)
 ```
 
+## Quick start
+
+See **[docs/RUN_GUIDE.md](docs/RUN_GUIDE.md)** (Thai) for full setup: database, `.env`, local dev, Docker, and troubleshooting.
+
+```bash
+npm install
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+npm run api:dev   # Terminal 1 → http://localhost:3000
+npm run web:dev   # Terminal 2 → http://localhost:5173
+```
+
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [docs/RUN_GUIDE.md](docs/RUN_GUIDE.md) | **How to run the project** (TH) |
 | [docs/FOLDER_STRUCTURE.md](docs/FOLDER_STRUCTURE.md) | Full directory tree |
 | [docs/ER_DIAGRAM.md](docs/ER_DIAGRAM.md) | Entity-relationship diagram |
 | [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | Table definitions & migrations |
@@ -42,12 +55,13 @@ visual_location/
 | [docs/FEATURE_MAPPING.md](docs/FEATURE_MAPPING.md) | Menu & feature map |
 | [docs/DATABASE_MAPPING.md](docs/DATABASE_MAPPING.md) | PHP DB → NestJS entity map |
 
-## Phase 1 — Setup (current)
+## Project status
 
-1. Import baseline schema from PHP dump (`visual_inventory_db.sql`)
-2. Apply additive migrations in `database/migrations/`
-3. Configure `.env` from `.env.example` in each app
-4. Start local services: `docker compose -f docker/docker-compose.yml up -d`
+| Phase | Status |
+|-------|--------|
+| Phase 1 — Structure & docs | Complete |
+| Phase 2 — NestJS API + MySQL + Docker | Complete |
+| Phase 3 — React frontend | Complete |
 
 ## PHP source reference
 

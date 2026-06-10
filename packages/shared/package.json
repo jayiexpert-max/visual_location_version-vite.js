@@ -3,15 +3,28 @@
   "version": "1.0.0",
   "private": true,
   "description": "Shared types, constants, and i18n keys",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./constants": "./src/constants/index.ts",
-    "./types": "./src/types/index.ts",
-    "./rbac": "./src/rbac/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants/api-routes.d.ts",
+      "default": "./dist/constants/api-routes.js"
+    },
+    "./types": {
+      "types": "./dist/types/roles.d.ts",
+      "default": "./dist/types/roles.js"
+    },
+    "./rbac": {
+      "types": "./dist/rbac/permissions.d.ts",
+      "default": "./dist/rbac/permissions.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
