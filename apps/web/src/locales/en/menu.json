@@ -1,0 +1,15 @@
+{
+  "dashboard": "Dashboard",
+  "search": "Search Material",
+  "receiveReservation": "Receive Material",
+  "receiveReturn": "Return Material",
+  "picklist": "Material Picking",
+  "rackOverview": "Rack Overview",
+  "expiryCheck": "Expiry Check",
+  "layout3d": "3D Layout",
+  "tvDisplay": "TV Display",
+  "stockReports": "Stock Reports",
+  "userManagement": "User Management",
+  "systemAdmin": "System Administration",
+  "handheld": "Handheld"
+}

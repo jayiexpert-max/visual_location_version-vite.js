@@ -1,0 +1,15 @@
+{
+  "dashboard": "แดชบอร์ด",
+  "search": "ค้นหาวัสดุ",
+  "receiveReservation": "รับวัสดุ",
+  "receiveReturn": "รับคืนวัสดุ",
+  "picklist": "หยิบวัสดุ",
+  "rackOverview": "ภาพรวม Rack",
+  "expiryCheck": "ตรวจสอบวันหมดอายุ",
+  "layout3d": "แผนผัง 3D",
+  "tvDisplay": "จอ TV",
+  "stockReports": "รายงานสต็อก",
+  "userManagement": "จัดการผู้ใช้",
+  "systemAdmin": "ตั้งค่าระบบ",
+  "handheld": "มือถือ"
+}
