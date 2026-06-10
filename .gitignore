@@ -30,6 +30,7 @@ coverage/
 
 # Docker volumes (local)
 docker/data/
+backups/
 
 # Misc
 *.pem

@@ -1,0 +1,108 @@
+# Production stack — Visual Location Management
+# Usage: docker compose -f docker-compose.production.yml --env-file .env up -d
+
+services:
+  mysql:
+    image: mariadb:10.11
+    container_name: vl-prod-mysql
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MYSQL_DATABASE:-visual_inventory_db}
+      TZ: Asia/Bangkok
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/database/init:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [vl-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: vl-prod-redis
+    restart: unless-stopped
+    command: ['redis-server', '--save', '60', '1', '--loglevel', 'warning']
+    volumes:
+      - redis_data:/data
+    networks: [vl-net]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: vl-prod-mqtt
+    restart: unless-stopped
+    ports:
+      - '${MQTT_PORT:-1883}:1883'
+    volumes:
+      - ./backend/docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+    networks: [vl-net]
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vl-prod-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3000
+      TIMEZONE: Asia/Bangkok
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-visual_inventory_db}
+      DB_USER: root
+      DB_PASS: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
+      PDSERVICE_BASE_URL: ${PDSERVICE_BASE_URL}
+      CPK_SERVICE_BASE_URL: ${CPK_SERVICE_BASE_URL}
+      CPK_MC_ID: ${CPK_MC_ID:-}
+      CPK_STATION_KEY: ${CPK_STATION_KEY:-}
+      TV_KIOSK_KEY: ${TV_KIOSK_KEY:-}
+      SECURITY_MAX_FAILED_LOGIN_ATTEMPTS: ${SECURITY_MAX_FAILED_LOGIN_ATTEMPTS:-5}
+      SECURITY_LOCKOUT_DURATION_MINUTES: ${SECURITY_LOCKOUT_DURATION_MINUTES:-15}
+    ports:
+      - '${API_PORT:-3000}:3000'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks: [vl-net]
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL}
+    container_name: vl-prod-web
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-80}:80'
+    depends_on:
+      - api
+    networks: [vl-net]
+
+volumes:
+  mysql_data:
+  redis_data:
+  mosquitto_data:
+
+networks:
+  vl-net:
+    driver: bridge

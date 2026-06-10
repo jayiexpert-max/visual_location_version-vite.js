@@ -15,36 +15,40 @@ Enterprise warehouse system migrated from Visual Inventory PHP.
 
 ```
 visual_location/
-├── apps/
-│   ├── api/          # NestJS backend
-│   └── web/          # React SPA (+ handheld routes)
-├── packages/
-│   └── shared/       # Shared types, constants, i18n keys
-├── database/
-│   ├── migrations/   # SQL migrations
-│   └── seeds/        # Reference data (optional)
-├── docker/           # Local dev: MySQL, Mosquitto
-├── docs/             # Architecture & migration documentation
+├── backend/          # NestJS API — deploy บน API server
+│   ├── src/
+│   ├── shared/
+│   ├── database/
+│   └── docker/
+├── frontend/         # React SPA — deploy บน web server
+│   └── src/shared/
+├── docs/
 └── raspi/            # MQTT gateway (migrate from PHP project)
 ```
 
+Frontend และ Backend เป็นโปรเจ็กต์อิสระ — **deploy คนละ server IP** ได้
+
 ## Quick start
 
-See **[docs/RUN_GUIDE.md](docs/RUN_GUIDE.md)** (Thai) for full setup: database, `.env`, local dev, Docker, and troubleshooting.
+See **[docs/RUN_GUIDE.md](docs/RUN_GUIDE.md)** (Thai) for full setup.
 
 ```bash
-npm install
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-npm run api:dev   # Terminal 1 → http://localhost:3000
-npm run web:dev   # Terminal 2 → http://localhost:5173
+npm run install:all
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+
+npm run backend:dev   # Terminal 1 → http://localhost:3000
+npm run frontend:dev  # Terminal 2 → http://localhost:5173
 ```
+
+**Deploy แยก server:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [docs/RUN_GUIDE.md](docs/RUN_GUIDE.md) | **How to run the project** (TH) |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | **Split-server deployment** (TH) |
 | [docs/FOLDER_STRUCTURE.md](docs/FOLDER_STRUCTURE.md) | Full directory tree |
 | [docs/ER_DIAGRAM.md](docs/ER_DIAGRAM.md) | Entity-relationship diagram |
 | [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | Table definitions & migrations |
@@ -62,6 +66,8 @@ npm run web:dev   # Terminal 2 → http://localhost:5173
 | Phase 1 — Structure & docs | Complete |
 | Phase 2 — NestJS API + MySQL + Docker | Complete |
 | Phase 3 — React frontend | Complete |
+| Folder split — backend / frontend | Complete |
+| Phase 4 — Industrial IoT (MQTT, Raspi, Socket.IO) | Complete |
 
 ## PHP source reference
 

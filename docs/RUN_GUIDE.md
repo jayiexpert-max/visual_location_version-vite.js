@@ -30,16 +30,18 @@
 
 ```
 visual_location/
-├── apps/
-│   ├── api/          # NestJS Backend  → http://localhost:3000
-│   └── web/          # React Frontend  → http://localhost:5173
-├── database/
-│   ├── schema/       # Schema รวม (สำหรับ DB ใหม่)
-│   ├── init/         # สคริปต์ init สำหรับ Docker MySQL
-│   └── migrations/   # Migration เพิ่มเติม (สำหรับ DB เดิม)
-├── docker/           # Docker Compose (MySQL, MQTT, API)
-└── packages/shared/  # Types / RBAC ที่ใช้ร่วมกัน
+├── backend/          # NestJS API (deploy แยกได้)
+│   ├── src/
+│   ├── shared/       # Types / RBAC สำหรับ API
+│   ├── database/
+│   └── docker/       # Docker Compose (MySQL, MQTT, API)
+├── frontend/         # React SPA (deploy แยกได้)
+│   └── src/shared/   # Types / RBAC สำหรับ Web (copy จาก backend)
+├── docs/
+└── raspi/
 ```
+
+> Deploy คนละ server IP: ดู [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ---
 
@@ -56,7 +58,8 @@ cd /Users/jayoverlay/Documents/visual_location
 ### ขั้นตอนที่ 2 — ติดตั้ง dependencies
 
 ```bash
-npm install
+npm run install:all
+# หรือแยก: cd backend && npm install && cd ../frontend && npm install
 ```
 
 ### ขั้นตอนที่ 3 — เตรียม Database
@@ -69,7 +72,7 @@ npm install
 2. รัน migration เพิ่มตาราง/คอลัมน์ใหม่สำหรับ NestJS:
 
 ```bash
-mysql -u root visual_inventory_db < database/migrations/001_additive_phase1.sql
+mysql -u root visual_inventory_db < backend/database/migrations/001_additive_phase1.sql
 ```
 
 > ถ้า MySQL ตั้งรหัสผ่าน root ให้เติม `-p` ท้ายคำสั่ง
@@ -78,22 +81,22 @@ mysql -u root visual_inventory_db < database/migrations/001_additive_phase1.sql
 
 ```bash
 # Schema เปล่า (ไม่มี user)
-mysql -u root < database/schema/000_full_schema.sql
+mysql -u root < backend/database/schema/000_full_schema.sql
 ```
 
 หรือ import ข้อมูลจาก PHP dump แล้วตามด้วย migration:
 
 ```bash
 mysql -u root visual_inventory_db < /Applications/XAMPP/xamppfiles/htdocs/visual_inventory/visual_inventory_db.sql
-mysql -u root visual_inventory_db < database/migrations/001_additive_phase1.sql
+mysql -u root visual_inventory_db < backend/database/migrations/001_additive_phase1.sql
 ```
 
 ### ขั้นตอนที่ 4 — ตั้งค่า Environment
 
-#### API (`apps/api/.env`)
+#### API (`backend/.env`)
 
 ```bash
-cp apps/api/.env.example apps/api/.env
+cp backend/.env.example backend/.env
 ```
 
 แก้ค่าสำคัญอย่างน้อยดังนี้:
@@ -114,10 +117,10 @@ MQTT_BROKER_URL=mqtt://127.0.0.1:1883
 
 > `JWT_ACCESS_SECRET` และ `JWT_REFRESH_SECRET` ต้องยาวอย่างน้อย **32 ตัวอักษร** มิฉะนั้น API จะ start ไม่ได้
 
-#### Frontend (`apps/web/.env`)
+#### Frontend (`frontend/.env`)
 
 ```bash
-cp apps/web/.env.example apps/web/.env
+cp frontend/.env.example frontend/.env
 ```
 
 ค่าเริ่มต้นใช้งานได้ทันที:
@@ -130,9 +133,9 @@ VITE_SOCKET_URL=http://localhost:3000
 ### ขั้นตอนที่ 5 — รัน MQTT (ถ้าต้องการทดสอบไฟ IO)
 
 ```bash
-cd docker
+cd backend/docker
 docker compose up -d mosquitto
-cd ..
+cd ../..
 ```
 
 > ถ้าไม่รัน MQTT ระบบหลักยังใช้งานได้ แต่ฟีเจอร์เปิดไฟแสดงตำแหน่ง (IO highlight) จะไม่ทำงาน
@@ -144,11 +147,11 @@ cd ..
 **Terminal 1 — API**
 
 ```bash
-cd /Users/jayoverlay/Documents/visual_location
-npm run api:dev
+cd backend
+npm run start:dev
 ```
 
-คำสั่งนี้จะ build `@visual-location/shared` อัตโนมัติก่อน start (ผ่าน `prestart:dev`)
+คำสั่งนี้จะ build `shared/` อัตโนมัติก่อน start (ผ่าน `prestart:dev`)
 
 รอจนเห็นข้อความ:
 
@@ -162,8 +165,8 @@ Swagger docs available at /api/docs
 **Terminal 2 — Frontend**
 
 ```bash
-cd /Users/jayoverlay/Documents/visual_location
-npm run web:dev
+cd frontend
+npm run dev
 ```
 
 รอจนเห็น:
@@ -206,7 +209,7 @@ Local: http://localhost:5173/
 ### ขั้นตอนที่ 1 — ตั้งค่า Docker env
 
 ```bash
-cd docker
+cd backend/docker
 cp .env.example .env
 ```
 
@@ -215,7 +218,7 @@ cp .env.example .env
 ### ขั้นตอนที่ 2 — รัน services
 
 ```bash
-cd docker
+cd backend/docker
 
 # รันเฉพาะ MySQL + MQTT (พัฒนา API/Web ในเครื่อง)
 docker compose up -d mysql mosquitto
@@ -226,7 +229,7 @@ docker compose up -d
 
 ### ขั้นตอนที่ 3 — ตั้งค่า API ในเครื่อง (ถ้าไม่ใช้ container api)
 
-แก้ `apps/api/.env`:
+แก้ `backend/.env`:
 
 ```env
 DB_HOST=127.0.0.1
@@ -243,7 +246,7 @@ MQTT_BROKER_URL=mqtt://127.0.0.1:1883
 ### คำสั่ง Docker ที่ใช้บ่อย
 
 ```bash
-cd docker
+cd backend/docker
 
 # ดูสถานะ
 docker compose ps
@@ -265,15 +268,16 @@ docker compose down -v
 
 รันจาก root โปรเจ็กต์ (`visual_location/`):
 
-| คำสั่ง | หน้าที่ |
+| คำสั่ง (จาก root) | หน้าที่ |
 |--------|---------|
-| `npm install` | ติดตั้ง dependencies ทั้ง monorepo |
-| `npm run api:dev` | รัน NestJS โหมดพัฒนา (build shared แล้ว hot reload) |
-| `npm run shared:build` | Build package `@visual-location/shared` |
-| `npm run web:dev` | รัน React โหมดพัฒนา (Vite) |
-| `npm run api:build` | Build API |
-| `npm run web:build` | Build Frontend |
-| `npm run build` | Build ทั้ง API + Web |
+| `npm run install:all` | ติดตั้ง dependencies ทั้ง backend + frontend |
+| `npm run backend:dev` | รัน NestJS โหมดพัฒนา |
+| `npm run frontend:dev` | รัน React โหมดพัฒนา (Vite) |
+| `npm run backend:build` | Build API |
+| `npm run frontend:build` | Build Frontend |
+| `npm run build` | Build ทั้งสองฝั่ง |
+
+หรือรันในโฟลเดอร์โดยตรง: `cd backend && npm run start:dev` / `cd frontend && npm run dev`
 
 ---
 
@@ -281,7 +285,7 @@ docker compose down -v
 
 ### CPK Service
 
-ตั้งค่าใน `apps/api/.env`:
+ตั้งค่าใน `backend/.env`:
 
 ```env
 CPK_MC_ID=your-machine-id
@@ -351,20 +355,20 @@ CORS_ORIGINS=http://localhost:5173,http://192.168.1.100:5173
 
 ```bash
 cd /Users/jayoverlay/Documents/visual_location
-npm install
+npm run install:all
 
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-# แก้ JWT secrets (≥32 ตัวอักษร) และ DB_PASS ใน apps/api/.env
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+# แก้ JWT secrets (≥32 ตัวอักษร) และ DB_PASS ใน backend/.env
 
 # ใช้ DB เดิมจาก XAMPP
-mysql -u root visual_inventory_db < database/migrations/001_additive_phase1.sql
+mysql -u root visual_inventory_db < backend/database/migrations/001_additive_phase1.sql
 
-# Terminal 1 — API (build shared + nest watch)
-npm run api:dev
+# Terminal 1 — API
+cd backend && npm run start:dev
 
 # Terminal 2 — Frontend
-npm run web:dev
+cd frontend && npm run dev
 
 # ทดสอบ API
 curl http://localhost:3000/api/v1/health
@@ -378,6 +382,7 @@ curl http://localhost:3000/api/v1/health
 
 | เอกสาร | เนื้อหา |
 |--------|---------|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploy แยก Frontend / Backend server |
 | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | โครงสร้างตาราง DB |
 | [API_MAPPING.md](API_MAPPING.md) | แผนที่ API PHP → NestJS |
 | [REACT_ARCHITECTURE.md](REACT_ARCHITECTURE.md) | โครงสร้าง Frontend |

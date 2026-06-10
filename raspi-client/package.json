@@ -1,0 +1,28 @@
+{
+  "name": "visual-location-raspi-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Raspberry Pi MQTT gateway for Visual Location Ethernet IO",
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "simulator": "SIMULATOR_MODE=true tsx src/index.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

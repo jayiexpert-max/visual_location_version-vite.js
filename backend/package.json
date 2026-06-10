@@ -1,0 +1,64 @@
+{
+  "name": "visual-location-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Visual Location NestJS API (standalone backend)",
+  "workspaces": [
+    "shared"
+  ],
+  "scripts": {
+    "shared:build": "npm run build -w @visual-location/shared",
+    "build": "npm run shared:build && nest build",
+    "prestart:dev": "npm run shared:build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/microservices": "^11.0.0",
+    "@nestjs/passport": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/platform-socket.io": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@nestjs/throttler": "^6.5.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/websockets": "^11.0.0",
+    "@visual-location/shared": "1.0.0",
+    "bcrypt": "^5.1.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "helmet": "^8.2.0",
+    "ioredis": "^5.4.0",
+    "mqtt": "^5.10.0",
+    "mysql2": "^3.11.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.0",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "@types/passport-jwt": "^4.0.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

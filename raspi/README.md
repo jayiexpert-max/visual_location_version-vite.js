@@ -1,19 +1,28 @@
 # Raspberry Pi MQTT Gateway
 
-Migrate from PHP project: `/Applications/XAMPP/xamppfiles/htdocs/visual_inventory/raspi/`
+Phase 4 IoT integration uses the standalone Node.js client in **`../raspi-client/`**.
 
-## Architecture change
+## Quick start (simulator)
 
-| Before (PHP) | After (NestJS) |
-|--------------|----------------|
-| PHP HTTP POST → Raspi Flask :8080 | NestJS MQTT publish → Raspi MQTT subscriber |
-| Raspi → Modbus TCP → Ethernet IO | Unchanged |
+```bash
+cd ../raspi-client
+npm install
+cp .env.example .env
+npm run simulator
+```
 
-## Phase 5 tasks
+## Docker (with backend stack)
 
-1. Add MQTT subscriber to existing `raspi/app/server.py`
-2. Keep Modbus logic in `modbus_io.py`
-3. Topic: `visual/io/{deviceId}/highlight` — same JSON payload as HTTP API
-4. Deprecate HTTP endpoint after cutover
+```bash
+cd ../backend/docker
+docker compose up -d raspberry-simulator mosquitto
+```
 
-See PHP `docs/RASPI_IO_API.md` for payload contract.
+## Architecture
+
+- Backend **never** controls Ethernet IO directly
+- NestJS `IoModule` publishes MQTT commands only
+- Raspi client subscribes and drives outputs (Modbus / relay in production)
+- Heartbeat every 30s on `factory/device/status`
+
+See [../docs/NESTJS_ARCHITECTURE.md](../docs/NESTJS_ARCHITECTURE.md) IoModule section.

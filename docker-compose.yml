@@ -1,0 +1,28 @@
+# Development / local orchestration
+# For production use docker-compose.production.yml
+
+services:
+  mysql:
+    extends:
+      file: backend/docker/docker-compose.yml
+      service: mysql
+
+  redis:
+    extends:
+      file: backend/docker/docker-compose.yml
+      service: redis
+
+  mosquitto:
+    extends:
+      file: backend/docker/docker-compose.yml
+      service: mosquitto
+
+  api:
+    extends:
+      file: backend/docker/docker-compose.yml
+      service: api
+
+  raspberry-simulator:
+    extends:
+      file: backend/docker/docker-compose.yml
+      service: raspberry-simulator
