@@ -1,0 +1,9 @@
+node_modules
+**/dist
+**/.env
+**/.env.*
+**/coverage
+.git
+docker/data
+*.md
+!apps/api/.env.example

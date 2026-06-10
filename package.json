@@ -1,0 +1,22 @@
+{
+  "name": "visual-location",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Visual Location Management — enterprise warehouse system (React + NestJS)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api:build": "npm run build -w @visual-location/api",
+    "web:build": "npm run build -w @visual-location/web",
+    "api:dev": "npm run start:dev -w @visual-location/api",
+    "web:dev": "npm run dev -w @visual-location/web",
+    "build": "npm run api:build && npm run web:build",
+    "lint": "npm run lint -w @visual-location/api && npm run lint -w @visual-location/web"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
