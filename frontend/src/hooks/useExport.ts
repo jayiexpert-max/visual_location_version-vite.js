@@ -1,11 +1,9 @@
 import { useCallback } from 'react';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 export function useExport() {
   const exportExcel = useCallback(
-    (rows: Record<string, unknown>[], filename: string, sheetName = 'Report') => {
+    async (rows: Record<string, unknown>[], filename: string, sheetName = 'Report') => {
+      const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -15,12 +13,16 @@ export function useExport() {
   );
 
   const exportPdf = useCallback(
-    (
+    async (
       title: string,
       columns: string[],
       rows: (string | number)[][],
       filename: string,
     ) => {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
       const doc = new jsPDF({ orientation: 'landscape' });
       doc.setFontSize(14);
       doc.text(title, 14, 16);

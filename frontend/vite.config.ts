@@ -26,9 +26,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    chunkSizeWarningLimit: 6000,
     rollupOptions: {
       output: {
         manualChunks: {
+          babylon: ['@babylonjs/core', '@babylonjs/gui'],
+          dataGrid: ['@mui/x-data-grid'],
+          exports: ['xlsx', 'jspdf', 'jspdf-autotable'],
           mui: ['@mui/material', '@mui/icons-material'],
           vendor: ['react', 'react-dom', 'react-router-dom'],
         },
