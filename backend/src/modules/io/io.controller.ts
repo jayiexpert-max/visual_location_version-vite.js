@@ -7,7 +7,7 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { IoBoxCommandDto, IoCommandResultDto } from './dto/io-command.dto';
+import { IoBoxCommandDto, IoCommandResultDto, IoTestOutputDto } from './dto/io-command.dto';
 import { IoService } from './io.service';
 
 @ApiTags('io')
@@ -38,6 +38,16 @@ export class IoController {
   @ApiOperation({ summary: 'Reset all mapped IO outputs via MQTT' })
   reset(@CurrentUser() user?: AuthenticatedUser): Promise<IoCommandResultDto> {
     return this.ioService.resetAll(user?.id);
+  }
+
+  @Post('test-output')
+  @Roles('manage')
+  @ApiOperation({ summary: 'Test one configured output pin' })
+  testOutput(
+    @Body() dto: IoTestOutputDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<IoCommandResultDto> {
+    return this.ioService.testOutput(dto, user?.id);
   }
 
   @Get('status')

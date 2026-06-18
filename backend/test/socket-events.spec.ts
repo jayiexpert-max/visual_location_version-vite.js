@@ -7,5 +7,7 @@ describe('SocketEvents', () => {
     expect(SocketEvents.deviceOffline).toBe('device:offline');
     expect(SocketEvents.ioStatus).toBe('io:status');
     expect(SocketEvents.inventoryUpdate).toBe('inventory:update');
+    expect(SocketEvents.reservationUpdate).toBe('reservation:update');
+    expect(SocketEvents.picklistUpdate).toBe('picklist:update');
   });
 });

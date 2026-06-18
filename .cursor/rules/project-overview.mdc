@@ -1,0 +1,14 @@
+---
+description: Visual Location repo layout, deploy, and safety defaults
+alwaysApply: true
+---
+
+# Visual Location — Project Overview
+
+- Monorepo with **standalone** `backend/` (NestJS) and `frontend/` (React). Deploy on different server IPs.
+- Root orchestrates via `npm run backend:dev` / `frontend:dev`. Do not assume a single combined app.
+- Shared types: `backend/shared/` (source of truth) and `frontend/src/shared/` (copy — keep in sync).
+- IoT: `raspi-client/` publishes MQTT heartbeats; backend never talks to Ethernet IO directly.
+- **Never commit** `.env`, credentials, or `backups/`. Use `.env.example` templates.
+- Database changes: SQL files in `backend/database/migrations/` only (`synchronize: false`).
+- Read `AGENTS.md` for architecture, test users, and module map before large changes.

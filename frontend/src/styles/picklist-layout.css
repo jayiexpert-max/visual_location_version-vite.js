@@ -1,0 +1,207 @@
+/**
+ * Picklist — PHP-style stacked panels from visual_inventory/public/picklist_issue.php.
+ */
+
+body.factory-picklist {
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+body.factory-picklist div.factory-app,
+div.factory-app.factory-picklist-shell {
+    min-height: 100dvh;
+}
+
+body.factory-picklist main.fx-main.fx-main--flush {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 1.25rem clamp(0.75rem, 2vw, 1.5rem);
+    box-sizing: border-box;
+}
+
+.picklist-page {
+    width: 100%;
+}
+
+.picklist-page > .fx-alert {
+    margin-bottom: 1rem;
+}
+
+.picklist-page__list-panel {
+    margin-bottom: 1rem;
+}
+
+.picklist-page__list-scroll {
+    margin-top: 0.75rem;
+}
+
+.picklist-page__refresh-toolbar {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.picklist-page__detail-panel {
+    margin-bottom: 1rem;
+}
+
+.picklist-page__detail-scroll {
+    width: 100%;
+}
+
+.picklist-page__detail-scroll .fx-table-wrap {
+    width: 100%;
+    margin: 0;
+    overflow-x: auto;
+}
+
+.picklist-page__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    background: var(--fx-surface);
+    border: 1px dashed var(--fx-border);
+    border-radius: var(--fx-radius-lg);
+    color: var(--fx-text-muted);
+    min-height: 220px;
+}
+
+.picklist-page__empty i {
+    font-size: 2.5rem;
+    opacity: 0.35;
+    color: var(--fx-accent, #2563eb);
+}
+
+.picklist-page__empty p {
+    margin: 0;
+    max-width: 28rem;
+    line-height: 1.55;
+}
+
+.factory-app #picklistTable.fx-picklist-table tbody > tr[data-id] {
+    cursor: pointer;
+}
+
+.factory-app #picklistTable.fx-picklist-table tbody > tr[data-id]:hover > td {
+    background-color: rgba(37, 99, 235, 0.07);
+}
+
+.factory-app #picklistTable.fx-picklist-table tbody > tr.fx-picklist-selected > td {
+    box-shadow: inset 3px 0 0 var(--fx-accent, #2563eb);
+}
+
+.picklist-page__detail-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 0 0.75rem;
+}
+
+.picklist-page__detail-panel .fx-picklist-panel-head,
+.picklist-page__detail-panel .fx-picklist-detail-hint {
+    margin-bottom: 0.5rem;
+}
+
+.picklist-page__detail-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+}
+
+.picklist-page__detail-count {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-left: auto;
+}
+
+body.factory-picklist .factory-app .picklist-page__detail-scroll .fx-picklist-detail-table {
+    max-height: min(58vh, 600px);
+    overflow: auto;
+}
+
+.factory-app #picklistTable.fx-picklist-table th,
+.factory-app #detailTable.fx-picklist-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f1f5f9;
+}
+
+@media (max-width: 900px) {
+    .picklist-page__empty {
+        min-height: 200px;
+    }
+}
+
+@media (max-width: 640px) {
+    body.factory-picklist main.fx-main.fx-main--flush {
+        padding-left: max(0.75rem, env(safe-area-inset-left));
+        padding-right: max(0.75rem, env(safe-area-inset-right));
+    }
+
+    .picklist-page__detail-count {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .picklist-page__refresh-toolbar .fx-btn {
+        width: 100%;
+    }
+
+    .factory-app #picklistTable.fx-picklist-table thead {
+        display: none;
+    }
+
+    .factory-app #picklistTable.fx-picklist-table,
+    .factory-app #picklistTable.fx-picklist-table tbody,
+    .factory-app #picklistTable.fx-picklist-table tr,
+    .factory-app #picklistTable.fx-picklist-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .factory-app #picklistTable.fx-picklist-table tbody > tr {
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--fx-border);
+        border-radius: var(--fx-radius);
+        background: var(--fx-surface);
+    }
+
+    .factory-app #picklistTable.fx-picklist-table tbody > tr > td {
+        padding: 0.4rem 0.75rem;
+        border: none;
+    }
+
+    .factory-app #picklistTable.fx-picklist-table tbody > tr > td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--fx-text-muted);
+        margin-bottom: 0.12rem;
+    }
+
+    .factory-app #picklistTable.fx-picklist-table tbody > tr > td:last-child::before {
+        display: none;
+    }
+
+    .fx-picklist-panel-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .fx-picklist-panel-head .fx-btn {
+        width: 100%;
+    }
+}

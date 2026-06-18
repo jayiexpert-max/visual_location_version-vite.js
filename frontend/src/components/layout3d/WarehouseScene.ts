@@ -1,11 +1,17 @@
+/**
+ * 3D warehouse scene — ported from PHP public/layout_3d.php (Babylon.js).
+ */
 import {
   ActionManager,
   Animation,
   ArcRotateCamera,
   Color3,
+  Color4,
   Engine,
   ExecuteCodeAction,
   HemisphericLight,
+  Material,
+  Mesh,
   MeshBuilder,
   Scene,
   StandardMaterial,
@@ -13,259 +19,711 @@ import {
   Vector3,
   type AbstractMesh,
 } from '@babylonjs/core';
-import type { HierarchyBox, WarehouseHierarchy } from '../../types/warehouse';
+import { AdvancedDynamicTexture, TextBlock } from '@babylonjs/gui';
+import type { BoxLayout, HierarchyBox, WarehouseHierarchy } from '../../types/warehouse';
+import {
+  rackSlotGridCells,
+  rackSlotPosition3D,
+} from '../../utils/rackSlotLayout';
 
-const COLORS = {
-  bg: '#0f172a',
-  primary: '#4f46e5',
-  highlight: '#3b82f6',
-  success: '#10b981',
-  empty: '#334155',
-  search: '#818cf8',
-};
+// --- Constants (layout_3d.php) ---
+const RACK_WIDTH = 3.0;
+const RACK_DEPTH = 1.2;
+const LEVEL_HEIGHT = 1.4;
+const DEFAULT_BOX_SIZE = 0.8;
+const SHELF_THICKNESS = 0.08;
 
-const BOX_W = 0.35;
-const BOX_H = 0.25;
-const BOX_D = 0.3;
-const BOX_GAP = 0.06;
-const LEVEL_HEIGHT = 0.32;
+const BOX_COLORS = ['#ef4444', '#22c55e', '#eab308', '#3b82f6', '#ec4899'];
 
-const RACK_TRANSFORMS: Array<{ position: [number, number, number]; rotationY: number }> = [
-  { position: [-4.5, 0, 0], rotationY: -Math.PI / 2 },
-  { position: [-1.6, 0, 4.5], rotationY: 0 },
-  { position: [1.6, 0, 4.5], rotationY: 0 },
-  { position: [4.5, 0, 1.6], rotationY: Math.PI / 2 },
-  { position: [4.5, 0, -1.6], rotationY: Math.PI / 2 },
-];
+export interface TvHighlightData {
+  productName?: string | null;
+  puid?: string | null;
+  rackName?: string | null;
+  levelNo?: number | null;
+  boxCode?: string | null;
+  boxId?: number;
+  slotId?: number | null;
+  slotNo?: number | null;
+  qty?: number;
+  highlightSeq?: string;
+}
 
 export interface WarehouseSceneCallbacks {
-  onBoxClick: (boxId: number) => void;
+  fetchBoxLayout: (boxId: number, highlightSlotId?: number) => Promise<BoxLayout>;
+  onBoxFocused?: (boxId: number, layout: BoxLayout, highlight: TvHighlightData | null) => void;
+  onFocusCleared?: () => void;
 }
 
 export interface WarehouseSceneHandle {
-  focusBox: (boxId: number, slotId?: number | null) => Promise<void>;
-  applyHighlight: (boxId: number, slotId?: number | null) => void;
+  applyTvHighlight: (data: TvHighlightData) => Promise<void>;
   clearHighlight: () => void;
+  resetCamera: () => void;
   setSearchQuery: (query: string) => void;
   resize: () => void;
+}
+
+interface BoxMetadata {
+  type: 'box';
+  id: number;
+  code: string;
+  rack: string;
+  level: number;
+  layout: string;
+  size: number;
+  originalEmissive: Color3;
+}
+
+interface SlotMeshData {
+  id: number;
+  slot_no: number;
+  highlight: boolean;
+  name: string | null;
+  qty: number;
+  puids?: string[];
 }
 
 let engine: Engine | null = null;
 let scene: Scene | null = null;
 let camera: ArcRotateCamera | null = null;
+let initialCameraState: {
+  alpha: number;
+  beta: number;
+  radius: number;
+  target: Vector3;
+  position: Vector3;
+} | null = null;
+
 const boxMeshes = new Map<number, AbstractMesh>();
-const boxMaterials = new Map<number, StandardMaterial>();
-let highlightedBoxId: number | null = null;
-let searchQuery = '';
+let currentFocusBox: AbstractMesh | null = null;
+let originalBoxPosition: Vector3 | null = null;
+let activeBlocks: AbstractMesh[] = [];
+let activeBouncingSphere: AbstractMesh | null = null;
+let lastHighlightData: TvHighlightData | null = null;
+let hierarchyRef: WarehouseHierarchy | null = null;
+let callbacksRef: WarehouseSceneCallbacks | null = null;
 
-function hexToColor3(hex: string): Color3 {
-  const r = Number.parseInt(hex.slice(1, 3), 16) / 255;
-  const g = Number.parseInt(hex.slice(3, 5), 16) / 255;
-  const b = Number.parseInt(hex.slice(5, 7), 16) / 255;
-  return new Color3(r, g, b);
+function colorFromHex(hex: string): Color3 {
+  return Color3.FromHexString(hex);
 }
 
-function boxHasProduct(box: HierarchyBox): boolean {
-  return box.slots.some((s) => s.product && s.product.qty > 0);
-}
+function layoutToSlotsArray(layout: BoxLayout, highlightSlotId?: number): SlotMeshData[] {
+  const maxSlot = Math.max(...layout.cells.map((c) => c.slotNo), 0);
+  const arr: SlotMeshData[] = Array.from({ length: maxSlot }, (_, i) => ({
+    id: 0,
+    slot_no: i + 1,
+    highlight: false,
+    name: null,
+    qty: 0,
+    puids: [],
+  }));
 
-function boxMatchesSearch(box: HierarchyBox, query: string): boolean {
-  if (!query) return false;
-  const q = query.toLowerCase();
-  if (box.boxCode.toLowerCase().includes(q)) return true;
-  return box.slots.some(
-    (s) => s.product?.name.toLowerCase().includes(q) || s.product?.name.toLowerCase() === q,
-  );
-}
-
-function applyMaterialState(boxId: number, box: HierarchyBox): void {
-  const mat = boxMaterials.get(boxId);
-  if (!mat) return;
-
-  if (highlightedBoxId === boxId) {
-    mat.diffuseColor = hexToColor3(COLORS.highlight);
-    mat.emissiveColor = hexToColor3(COLORS.highlight).scale(0.45);
-  } else if (searchQuery && boxMatchesSearch(box, searchQuery)) {
-    mat.diffuseColor = hexToColor3(COLORS.search);
-    mat.emissiveColor = hexToColor3(COLORS.search).scale(0.3);
-  } else if (boxHasProduct(box)) {
-    mat.diffuseColor = hexToColor3(COLORS.success);
-    mat.emissiveColor = hexToColor3(COLORS.success).scale(0.15);
-  } else {
-    mat.diffuseColor = hexToColor3(COLORS.empty);
-    mat.emissiveColor = Color3.Black();
+  for (const cell of layout.cells) {
+    const idx = cell.slotNo - 1;
+    if (idx < 0) continue;
+    arr[idx] = {
+      id: cell.slotId,
+      slot_no: cell.slotNo,
+      highlight: cell.highlighted || (highlightSlotId != null && cell.slotId === highlightSlotId),
+      name: cell.product?.name ?? null,
+      qty: cell.product?.qty ?? 0,
+      puids: cell.puids ?? [],
+    };
   }
+
+  return arr;
 }
 
-function refreshAllMaterials(hierarchy: WarehouseHierarchy): void {
-  for (const rack of hierarchy.racks) {
-    for (const level of rack.levels) {
-      for (const box of level.boxes) {
-        applyMaterialState(box.id, box);
+function getRackTransform(rIndex: number): { xPos: number; zPos: number; yRot: number } {
+  if (rIndex === 0) return { xPos: -4.5, zPos: 0, yRot: -Math.PI / 2 };
+  if (rIndex === 1) return { xPos: -1.6, zPos: 4.5, yRot: 0 };
+  if (rIndex === 2) return { xPos: 1.6, zPos: 4.5, yRot: 0 };
+  if (rIndex === 3) return { xPos: 4.5, zPos: 1.6, yRot: Math.PI / 2 };
+  if (rIndex === 4) return { xPos: 4.5, zPos: -1.6, yRot: Math.PI / 2 };
+  return { xPos: -10 + rIndex * 4, zPos: -10, yRot: 0 };
+}
+
+function createLabelPlane(
+  parent: TransformNode,
+  name: string,
+  text: string,
+  rotationY: number,
+  width: number,
+  height: number,
+  fontSize: number,
+  color: string,
+  outlineColor: string,
+): void {
+  if (!scene) return;
+  const plane = MeshBuilder.CreatePlane(name, { width, height }, scene);
+  plane.parent = parent;
+  plane.rotation.y = rotationY;
+  plane.isPickable = false;
+
+  const adt = AdvancedDynamicTexture.CreateForMesh(plane, 512, 256);
+  const block = new TextBlock();
+  block.text = text;
+  block.color = color;
+  block.fontSize = fontSize;
+  block.fontWeight = 'bold';
+  block.outlineWidth = 5;
+  block.outlineColor = outlineColor;
+  adt.addControl(block);
+}
+
+function createBoxCodeLabel(parent: AbstractMesh, boxCode: string, boxScale: number): void {
+  if (!scene) return;
+  const labelPlane = MeshBuilder.CreatePlane(`boxLabel-${parent.name}`, {
+    width: boxScale * 0.8,
+    height: boxScale * 0.8,
+  }, scene);
+  labelPlane.parent = parent;
+  labelPlane.position = new Vector3(0, 0, -(boxScale / 2) - 0.01);
+  labelPlane.isPickable = false;
+
+  const adt = AdvancedDynamicTexture.CreateForMesh(labelPlane, 512, 512);
+  const block = new TextBlock();
+  block.text = boxCode;
+  block.color = 'white';
+  block.fontSize = 180;
+  block.fontWeight = 'bold';
+  block.outlineWidth = 8;
+  block.outlineColor = 'black';
+  adt.addControl(block);
+}
+
+function buildRacks(activeScene: Scene, hierarchy: WarehouseHierarchy): void {
+  const rackMat = new StandardMaterial('rackMat', activeScene);
+  rackMat.diffuseColor = new Color3(0.3, 0.35, 0.4);
+
+  const shelfMat = new StandardMaterial('shelfMat', activeScene);
+  shelfMat.diffuseColor = new Color3(0.5, 0.55, 0.6);
+
+  const rackBoxMats = BOX_COLORS.map((hex, idx) => {
+    const mat = new StandardMaterial(`boxMatRack-${idx}`, activeScene);
+    const color = colorFromHex(hex);
+    mat.diffuseColor = color;
+    mat.emissiveColor = color.scale(0.2);
+    mat.transparencyMode = Material.MATERIAL_ALPHATESTANDBLEND;
+    mat.alpha = 1;
+    return mat;
+  });
+
+  const defaultBoxMat = new StandardMaterial('boxMatDefault', activeScene);
+  defaultBoxMat.diffuseColor = new Color3(0.2, 0.4, 0.8);
+  defaultBoxMat.emissiveColor = new Color3(0.05, 0.1, 0.2);
+  defaultBoxMat.transparencyMode = Material.MATERIAL_ALPHATESTANDBLEND;
+
+  hierarchy.racks.forEach((rack, rIndex) => {
+    const { xPos, zPos, yRot } = getRackTransform(rIndex);
+    const rackRoot = new TransformNode(`rackRoot-${rack.id}`, activeScene);
+    rackRoot.position = new Vector3(xPos, 0, zPos);
+    rackRoot.rotation.y = yRot;
+
+    const maxLevels = rack.levels.length;
+    const rackHeight = maxLevels * LEVEL_HEIGHT;
+    const poleHeight = rackHeight + 0.5;
+
+    for (const px of [-RACK_WIDTH / 2, RACK_WIDTH / 2]) {
+      for (const pz of [-RACK_DEPTH / 2, RACK_DEPTH / 2]) {
+        const pole = MeshBuilder.CreateBox(`pole-${rack.id}-${px}-${pz}`, {
+          height: poleHeight,
+          width: 0.1,
+          depth: 0.1,
+        }, activeScene);
+        pole.parent = rackRoot;
+        pole.position = new Vector3(px, poleHeight / 2, pz);
+        pole.material = rackMat;
+        pole.isPickable = false;
       }
     }
-  }
-}
 
-function getMeshWorldPosition(mesh: AbstractMesh): Vector3 {
-  return mesh.getAbsolutePosition().clone();
-}
+    const topCover = MeshBuilder.CreateBox(`topCover-${rack.id}`, {
+      width: RACK_WIDTH,
+      height: SHELF_THICKNESS,
+      depth: RACK_DEPTH,
+    }, activeScene);
+    topCover.parent = rackRoot;
+    topCover.position = new Vector3(0, rackHeight, 0);
+    topCover.material = shelfMat;
+    topCover.isPickable = false;
 
-async function animateCameraTo(target: Vector3): Promise<void> {
-  if (!scene || !camera) return;
+    const labelRoot = new TransformNode(`labelRoot-${rack.id}`, activeScene);
+    labelRoot.parent = rackRoot;
+    labelRoot.position = new Vector3(0, poleHeight + 0.8, 0);
+    createLabelPlane(labelRoot, `rackLabel1-${rack.id}`, rack.name, 0, 3, 1.5, 140, '#00f2fe', '#3b82f6');
+    createLabelPlane(labelRoot, `rackLabel2-${rack.id}`, rack.name, Math.PI / 2, 3, 1.5, 140, '#00f2fe', '#3b82f6');
 
-  const offset = new Vector3(2.8, 2.2, 2.8);
-  const desiredPos = target.add(offset);
-  const frameRate = 60;
-  const duration = 1.2;
-  const totalFrames = Math.round(frameRate * duration);
+    rack.levels.forEach((level, lIndex) => {
+      const yPos = (maxLevels - lIndex) * LEVEL_HEIGHT - LEVEL_HEIGHT / 2;
 
-  const animAlpha = new Animation(
-    'camAlpha',
-    'alpha',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
-  const animBeta = new Animation(
-    'camBeta',
-    'beta',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
-  const animRadius = new Animation(
-    'camRadius',
-    'radius',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
-  const animTargetX = new Animation(
-    'camTargetX',
-    'target.x',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
-  const animTargetY = new Animation(
-    'camTargetY',
-    'target.y',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
-  const animTargetZ = new Animation(
-    'camTargetZ',
-    'target.z',
-    frameRate,
-    Animation.ANIMATIONTYPE_FLOAT,
-    Animation.ANIMATIONLOOPMODE_CONSTANT,
-  );
+      const shelf = MeshBuilder.CreateBox(`shelf-${rack.id}-${level.id}`, {
+        width: RACK_WIDTH,
+        height: SHELF_THICKNESS,
+        depth: RACK_DEPTH,
+      }, activeScene);
+      shelf.parent = rackRoot;
+      shelf.position = new Vector3(0, yPos - LEVEL_HEIGHT / 2 + SHELF_THICKNESS / 2, 0);
+      shelf.material = shelfMat;
+      shelf.isPickable = false;
 
-  const desiredAlpha = Math.atan2(desiredPos.x - target.x, desiredPos.z - target.z);
-  const distance = Vector3.Distance(desiredPos, target);
-  const desiredBeta = Math.acos(
-    Math.min(1, Math.max(-1, (desiredPos.y - target.y) / distance)),
-  );
-  const desiredRadius = Vector3.Distance(desiredPos, target);
+      const boxCount = level.boxes.length;
+      if (boxCount === 0) return;
 
-  animAlpha.setKeys([
-    { frame: 0, value: camera.alpha },
-    { frame: totalFrames, value: desiredAlpha },
-  ]);
-  animBeta.setKeys([
-    { frame: 0, value: camera.beta },
-    { frame: totalFrames, value: desiredBeta },
-  ]);
-  animRadius.setKeys([
-    { frame: 0, value: camera.radius },
-    { frame: totalFrames, value: desiredRadius },
-  ]);
-  animTargetX.setKeys([
-    { frame: 0, value: camera.target.x },
-    { frame: totalFrames, value: target.x },
-  ]);
-  animTargetY.setKeys([
-    { frame: 0, value: camera.target.y },
-    { frame: totalFrames, value: target.y },
-  ]);
-  animTargetZ.setKeys([
-    { frame: 0, value: camera.target.z },
-    { frame: totalFrames, value: target.z },
-  ]);
+      const availableWidth = RACK_WIDTH - 0.2;
+      const widthPerBox = availableWidth / boxCount;
+      const boxScale = Math.min(DEFAULT_BOX_SIZE, widthPerBox * 0.9);
+      const startBoxX = -(RACK_WIDTH / 2) + 0.1;
 
-  scene.beginDirectAnimation(
-    camera,
-    [animAlpha, animBeta, animRadius, animTargetX, animTargetY, animTargetZ],
-    0,
-    totalFrames,
-    false,
-    1,
-  );
+      level.boxes.forEach((box: HierarchyBox, bIndex: number) => {
+        const bX = startBoxX + bIndex * widthPerBox + widthPerBox / 2;
+        const shelfY = yPos - LEVEL_HEIGHT / 2 + SHELF_THICKNESS / 2;
+        const bY = shelfY + SHELF_THICKNESS / 2 + boxScale / 2;
 
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, duration * 1000 + 50);
-  });
-}
+        const boxMesh = MeshBuilder.CreateBox(`box-${box.id}`, {
+          width: boxScale,
+          height: boxScale,
+          depth: boxScale,
+        }, activeScene);
 
-function buildRacks(
-  activeScene: Scene,
-  hierarchy: WarehouseHierarchy,
-  callbacks: WarehouseSceneCallbacks,
-): void {
-  hierarchy.racks.forEach((rack, rackIndex) => {
-    const transform = RACK_TRANSFORMS[rackIndex] ?? {
-      position: [rackIndex * 2.5, 0, 0] as [number, number, number],
-      rotationY: 0,
-    };
+        boxMesh.parent = rackRoot;
+        boxMesh.position = new Vector3(bX, bY, 0);
 
-    const rackRoot = new TransformNode(`rack-${rack.id}`, activeScene);
-    rackRoot.position = new Vector3(...transform.position);
-    rackRoot.rotation.y = transform.rotationY;
+        const baseMat = rIndex < rackBoxMats.length ? rackBoxMats[rIndex] : defaultBoxMat;
+        const boxMat = baseMat.clone(`boxMat-${box.id}`);
+        boxMesh.material = boxMat;
 
-    const rackLabel = MeshBuilder.CreateBox(
-      `rack-base-${rack.id}`,
-      { width: 0.08, height: 0.05, depth: 2.4 },
-      activeScene,
-    );
-    rackLabel.position = new Vector3(0, 0.02, 0);
-    rackLabel.parent = rackRoot;
-    const baseMat = new StandardMaterial(`rack-base-mat-${rack.id}`, activeScene);
-    baseMat.diffuseColor = hexToColor3(COLORS.primary);
-    baseMat.alpha = 0.35;
-    rackLabel.material = baseMat;
-    rackLabel.isPickable = false;
+        createBoxCodeLabel(boxMesh, box.boxCode, boxScale);
 
-    rack.levels.forEach((level) => {
-      const levelY = (level.levelNo - 1) * LEVEL_HEIGHT + BOX_H / 2 + 0.05;
+        const meta: BoxMetadata = {
+          type: 'box',
+          id: box.id,
+          code: box.boxCode,
+          rack: rack.name,
+          level: level.levelNo,
+          layout: box.layout || '1x1',
+          size: boxScale,
+          originalEmissive: baseMat.emissiveColor.clone(),
+        };
+        boxMesh.metadata = meta;
+        boxMeshes.set(box.id, boxMesh);
 
-      level.boxes.forEach((box, boxIndex) => {
-        const posInLevel = box.positionInLevel ?? boxIndex;
-        const mesh = MeshBuilder.CreateBox(
-          `box-${box.id}`,
-          { width: BOX_W, height: BOX_H, depth: BOX_D },
-          activeScene,
+        boxMesh.actionManager = new ActionManager(activeScene);
+        boxMesh.actionManager.registerAction(
+          new ExecuteCodeAction(ActionManager.OnPointerOverTrigger, (ev) => {
+            const src = ev.source as AbstractMesh;
+            if (currentFocusBox !== boxMesh && src?.material) {
+              (src.material as StandardMaterial).emissiveColor = new Color3(0.4, 0.4, 0.6);
+              document.body.style.cursor = 'pointer';
+            }
+          }),
         );
-        mesh.position = new Vector3(posInLevel * (BOX_W + BOX_GAP), levelY, 0);
-        mesh.parent = rackRoot;
-        mesh.metadata = { boxId: box.id, box, rackName: rack.name, levelNo: level.levelNo };
-
-        const mat = new StandardMaterial(`box-mat-${box.id}`, activeScene);
-        mesh.material = mat;
-        boxMeshes.set(box.id, mesh);
-        boxMaterials.set(box.id, mat);
-        applyMaterialState(box.id, box);
-
-        mesh.actionManager = new ActionManager(activeScene);
-        mesh.actionManager.registerAction(
+        boxMesh.actionManager.registerAction(
+          new ExecuteCodeAction(ActionManager.OnPointerOutTrigger, (ev) => {
+            const src = ev.source as AbstractMesh;
+            if (currentFocusBox !== boxMesh && src?.material) {
+              const m = src.metadata as BoxMetadata;
+              (src.material as StandardMaterial).emissiveColor =
+                m?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
+              document.body.style.cursor = 'default';
+            }
+          }),
+        );
+        boxMesh.actionManager.registerAction(
           new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
-            callbacks.onBoxClick(box.id);
+            if (currentFocusBox === boxMesh) {
+              resetFocus();
+            } else {
+              void focusBox(boxMesh);
+            }
           }),
         );
       });
     });
   });
+}
+
+function disposeActiveBlocks(): void {
+  for (const m of activeBlocks) {
+    m.dispose();
+  }
+  activeBlocks = [];
+  if (activeBouncingSphere) {
+    activeBouncingSphere.dispose();
+    activeBouncingSphere = null;
+  }
+}
+
+function resetFocusInstant(): void {
+  disposeActiveBlocks();
+
+  if (currentFocusBox && originalBoxPosition) {
+    currentFocusBox.position = originalBoxPosition.clone();
+    const mat = currentFocusBox.material as StandardMaterial | null;
+    if (mat) {
+      mat.alpha = 1;
+      const meta = currentFocusBox.metadata as BoxMetadata;
+      mat.emissiveColor = meta?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
+    }
+    currentFocusBox = null;
+    originalBoxPosition = null;
+  }
+}
+
+function resetFocus(): void {
+  disposeActiveBlocks();
+
+  if (currentFocusBox && originalBoxPosition && scene) {
+    Animation.CreateAndStartAnimation(
+      'animBack',
+      currentFocusBox,
+      'position',
+      60,
+      40,
+      currentFocusBox.position,
+      originalBoxPosition,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    const mat = currentFocusBox.material as StandardMaterial | null;
+    if (mat) {
+      mat.alpha = 1;
+      const meta = currentFocusBox.metadata as BoxMetadata;
+      mat.emissiveColor = meta?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
+    }
+    currentFocusBox = null;
+    originalBoxPosition = null;
+  }
+
+  lastHighlightData = null;
+  callbacksRef?.onFocusCleared?.();
+}
+
+function createBouncingIndicator(targetMesh: AbstractMesh, slotNo: number): void {
+  if (!scene) return;
+  if (activeBouncingSphere) activeBouncingSphere.dispose();
+
+  const sphere = MeshBuilder.CreateSphere('ind', { diameter: 0.2 }, scene);
+  if (targetMesh.parent) sphere.parent = targetMesh.parent;
+  sphere.position = targetMesh.position.clone();
+  sphere.position.y += 0.35;
+
+  const mat = new StandardMaterial('indMat', scene);
+  mat.diffuseColor = new Color3(1, 0.4, 0);
+  mat.emissiveColor = new Color3(1, 0.2, 0);
+  sphere.material = mat;
+
+  const labelPlane = MeshBuilder.CreatePlane('ballLabel', { size: 0.35 }, scene);
+  labelPlane.parent = sphere;
+  labelPlane.position = new Vector3(0, 0.15, 0);
+  labelPlane.billboardMode = Mesh.BILLBOARDMODE_ALL;
+
+  const adt = AdvancedDynamicTexture.CreateForMesh(labelPlane);
+  const txt = new TextBlock();
+  txt.text = String(slotNo);
+  txt.color = 'black';
+  txt.fontSize = 240;
+  txt.fontWeight = 'bold';
+  adt.addControl(txt);
+
+  const baseY = sphere.position.y;
+  const anim = new Animation(
+    'float',
+    'position.y',
+    30,
+    Animation.ANIMATIONTYPE_FLOAT,
+    Animation.ANIMATIONLOOPMODE_CYCLE,
+  );
+  anim.setKeys([
+    { frame: 0, value: baseY },
+    { frame: 20, value: baseY + 0.25 },
+    { frame: 40, value: baseY },
+  ]);
+  sphere.animations = [anim];
+  scene.beginAnimation(sphere, 0, 40, true);
+
+  activeBouncingSphere = sphere;
+}
+
+function generateSlotMeshes(
+  parentBox: AbstractMesh,
+  layoutStr: string,
+  slotsData: SlotMeshData[],
+  highlightSlotId: number | null | undefined,
+  boxSize: number,
+): void {
+  if (!scene) return;
+  disposeActiveBlocks();
+
+  const innerSize = boxSize * 0.96;
+  const cells = rackSlotGridCells(layoutStr, slotsData.length);
+
+  const emptyMat = new StandardMaterial('emptyMat', scene);
+  emptyMat.diffuseColor = new Color3(0.05, 0.05, 0.1);
+  emptyMat.alpha = 0.8;
+
+  const filledMat = new StandardMaterial('filledMat', scene);
+  filledMat.diffuseColor = new Color3(0, 0.9, 0.5);
+
+  const hlMat = new StandardMaterial('hlMat', scene);
+  hlMat.diffuseColor = new Color3(1, 0.7, 0);
+
+  const containerFrame = MeshBuilder.CreateBox('frame', {
+    width: boxSize,
+    height: boxSize,
+    depth: boxSize,
+  }, scene);
+  containerFrame.parent = parentBox;
+  containerFrame.position = Vector3.Zero();
+  const frameMat = new StandardMaterial('frameMat', scene);
+  frameMat.wireframe = true;
+  frameMat.emissiveColor = new Color3(0.5, 0.5, 0.5);
+  frameMat.alpha = 0.1;
+  containerFrame.material = frameMat;
+  activeBlocks.push(containerFrame);
+
+  for (const cell of cells) {
+    const slotData = slotsData[cell.slotIndex];
+    const pos = rackSlotPosition3D(cell.col, cell.visRow, cell.gridCols, cell.gridRows, innerSize);
+
+    const slotMesh = MeshBuilder.CreateBox('slot', {
+      width: pos.cellW * 0.9,
+      depth: pos.cellD * 0.9,
+      height: boxSize * 0.8,
+    }, scene);
+
+    slotMesh.parent = parentBox;
+    slotMesh.position = new Vector3(pos.x, 0, pos.z);
+
+    if (slotData?.name) {
+      slotMesh.material = filledMat;
+    } else {
+      slotMesh.material = emptyMat;
+      slotMesh.scaling.y = 0.05;
+      slotMesh.position.y -= boxSize * 0.38;
+    }
+
+    if (
+      slotData &&
+      (slotData.highlight ||
+        (highlightSlotId != null && slotData.id === highlightSlotId))
+    ) {
+      slotMesh.material = hlMat;
+      createBouncingIndicator(slotMesh, slotData.slot_no);
+    }
+
+    activeBlocks.push(slotMesh);
+  }
+}
+
+async function showSlotsOnBox(mesh: AbstractMesh, highlightSlotId?: number | null): Promise<void> {
+  const meta = mesh.metadata as BoxMetadata;
+  if (!callbacksRef) return;
+
+  try {
+    const layout = await callbacksRef.fetchBoxLayout(meta.id, highlightSlotId ?? undefined);
+    const slotsData = layoutToSlotsArray(layout, highlightSlotId ?? undefined);
+    generateSlotMeshes(mesh, meta.layout, slotsData, highlightSlotId, meta.size);
+    callbacksRef.onBoxFocused?.(meta.id, layout, lastHighlightData);
+  } catch (err) {
+    console.error('Error fetching box layout', err);
+  }
+}
+
+function focusBox(mesh: AbstractMesh, highlightSlotId: number | null = null): Promise<void> {
+  return new Promise((resolve) => {
+    if (!scene || !camera) {
+      resolve();
+      return;
+    }
+
+    if (currentFocusBox && currentFocusBox !== mesh) {
+      disposeActiveBlocks();
+      if (originalBoxPosition) {
+        currentFocusBox.position = originalBoxPosition.clone();
+        const mat = currentFocusBox.material as StandardMaterial;
+        mat.alpha = 1;
+        const m = currentFocusBox.metadata as BoxMetadata;
+        mat.emissiveColor = m.originalEmissive;
+      }
+      currentFocusBox = null;
+      originalBoxPosition = null;
+    }
+
+    if (!mesh) {
+      resolve();
+      return;
+    }
+
+    if (currentFocusBox === mesh && highlightSlotId) {
+      void showSlotsOnBox(mesh, highlightSlotId).then(() => resolve());
+      return;
+    }
+
+    if (currentFocusBox === mesh) {
+      resolve();
+      return;
+    }
+
+    if (!currentFocusBox) {
+      // camera state saved implicitly — reset uses initialCameraState
+    }
+
+    currentFocusBox = mesh;
+    originalBoxPosition = mesh.position.clone();
+
+    const targetPosLocal = originalBoxPosition.clone();
+    targetPosLocal.z -= 1.6;
+
+    const rackRoot = mesh.parent as TransformNode | null;
+    const rotY = rackRoot?.rotation.y ?? 0;
+    const worldTarget = mesh.getAbsolutePosition().clone();
+
+    let targetAlpha = camera.alpha;
+    const targetBeta = Math.PI / 3;
+
+    if (Math.abs(rotY) < 0.1) {
+      targetAlpha = -Math.PI / 2;
+    } else if (rotY < -0.5) {
+      targetAlpha = 0;
+    } else {
+      targetAlpha = -Math.PI;
+    }
+
+    while (targetAlpha - camera.alpha > Math.PI) targetAlpha -= 2 * Math.PI;
+    while (targetAlpha - camera.alpha < -Math.PI) targetAlpha += 2 * Math.PI;
+
+    const animTarget = new Animation(
+      'animTarget',
+      'target',
+      60,
+      Animation.ANIMATIONTYPE_VECTOR3,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    animTarget.setKeys([
+      { frame: 0, value: camera.target.clone() },
+      { frame: 80, value: worldTarget },
+    ]);
+
+    const animAlpha = new Animation(
+      'animAlpha',
+      'alpha',
+      60,
+      Animation.ANIMATIONTYPE_FLOAT,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    animAlpha.setKeys([
+      { frame: 0, value: camera.alpha },
+      { frame: 80, value: targetAlpha },
+    ]);
+
+    const animBeta = new Animation(
+      'animBeta',
+      'beta',
+      60,
+      Animation.ANIMATIONTYPE_FLOAT,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    animBeta.setKeys([
+      { frame: 0, value: camera.beta },
+      { frame: 80, value: targetBeta },
+    ]);
+
+    const animRadius = new Animation(
+      'animRadius',
+      'radius',
+      60,
+      Animation.ANIMATIONTYPE_FLOAT,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    animRadius.setKeys([
+      { frame: 0, value: camera.radius },
+      { frame: 80, value: 5.5 },
+    ]);
+
+    const mat = mesh.material as StandardMaterial;
+    mat.emissiveColor = new Color3(0.3, 0.3, 0.6);
+    mat.alpha = 0.2;
+
+    scene.beginDirectAnimation(
+      camera,
+      [animTarget, animAlpha, animBeta, animRadius],
+      0,
+      80,
+      false,
+      1,
+      () => {
+        Animation.CreateAndStartAnimation(
+          'animOut',
+          mesh,
+          'position',
+          60,
+          40,
+          mesh.position,
+          targetPosLocal,
+          Animation.ANIMATIONLOOPMODE_CONSTANT,
+          undefined,
+          () => {
+            void showSlotsOnBox(mesh, highlightSlotId).then(() => resolve());
+          },
+        );
+      },
+    );
+  });
+}
+
+function resetCamera(): void {
+  resetFocus();
+
+  if (camera && initialCameraState && scene) {
+    const animSpeed = 90;
+    Animation.CreateAndStartAnimation(
+      'camAlpha',
+      camera,
+      'alpha',
+      60,
+      animSpeed,
+      camera.alpha,
+      initialCameraState.alpha,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camBeta',
+      camera,
+      'beta',
+      60,
+      animSpeed,
+      camera.beta,
+      initialCameraState.beta,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camRadius',
+      camera,
+      'radius',
+      60,
+      animSpeed,
+      camera.radius,
+      initialCameraState.radius,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camTarget',
+      camera,
+      'target',
+      60,
+      animSpeed,
+      camera.target,
+      initialCameraState.target,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+  }
+}
+
+function boxMatchesSearch(box: HierarchyBox, query: string): boolean {
+  const q = query.toLowerCase();
+  if (box.boxCode.toLowerCase().includes(q)) return true;
+  return box.slots.some(
+    (s) => s.product?.name.toLowerCase().includes(q) || s.product?.name.toLowerCase() === q,
+  );
 }
 
 export async function initScene(
@@ -275,37 +733,38 @@ export async function initScene(
 ): Promise<WarehouseSceneHandle> {
   disposeScene();
 
+  hierarchyRef = hierarchy;
+  callbacksRef = callbacks;
+
   engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
   scene = new Scene(engine);
-  scene.clearColor = hexToColor3(COLORS.bg).toColor4(1);
+  scene.clearColor = new Color4(220 / 255, 225 / 255, 235 / 255, 1);
 
   camera = new ArcRotateCamera(
     'camera',
-    -Math.PI / 4,
-    1.1,
-    18,
-    new Vector3(0, 1.5, 0),
+    -Math.PI / 2,
+    Math.PI / 2.5,
+    20,
+    new Vector3(0, 3, 2),
     scene,
   );
-  camera.lowerRadiusLimit = 4;
-  camera.upperRadiusLimit = 40;
-  camera.wheelPrecision = 20;
   camera.attachControl(canvas, true);
+  camera.lowerRadiusLimit = 2;
+  camera.upperRadiusLimit = 80;
+  camera.wheelPrecision = 50;
+
+  initialCameraState = {
+    alpha: camera.alpha,
+    beta: camera.beta,
+    radius: camera.radius,
+    target: camera.target.clone(),
+    position: camera.position.clone(),
+  };
 
   const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
-  light.intensity = 0.9;
+  light.intensity = 0.8;
 
-  MeshBuilder.CreateGround('ground', { width: 24, height: 24 }, scene);
-  const groundMat = new StandardMaterial('groundMat', scene);
-  groundMat.diffuseColor = hexToColor3('#1e293b');
-  groundMat.specularColor = Color3.Black();
-  const ground = scene.getMeshByName('ground');
-  if (ground) {
-    ground.material = groundMat;
-    ground.isPickable = false;
-  }
-
-  buildRacks(scene, hierarchy, callbacks);
+  buildRacks(scene, hierarchy);
 
   engine.runRenderLoop(() => {
     scene?.render();
@@ -313,50 +772,37 @@ export async function initScene(
 
   const handleResize = () => engine?.resize();
   window.addEventListener('resize', handleResize);
-
-  const hierarchyRef = hierarchy;
+  (engine as Engine & { __vlResizeHandler?: () => void }).__vlResizeHandler = handleResize;
 
   const handle: WarehouseSceneHandle = {
-    async focusBox(boxId: number, slotId?: number | null) {
+    async applyTvHighlight(data: TvHighlightData) {
+      lastHighlightData = data;
+      const boxId = data.boxId;
+      if (!boxId) return;
       const mesh = boxMeshes.get(boxId);
       if (!mesh) return;
-      highlightedBoxId = boxId;
-      refreshAllMaterials(hierarchyRef);
-      const pos = getMeshWorldPosition(mesh);
-      if (slotId) {
-        pos.y += 0.15;
-      }
-      await animateCameraTo(pos);
-    },
-
-    applyHighlight(boxId: number, _slotId?: number | null) {
-      highlightedBoxId = boxId;
-      refreshAllMaterials(hierarchyRef);
-      for (const rack of hierarchyRef.racks) {
-        for (const level of rack.levels) {
-          for (const box of level.boxes) {
-            if (box.id === boxId) {
-              applyMaterialState(box.id, box);
-            }
-          }
-        }
-      }
+      resetFocusInstant();
+      await focusBox(mesh, data.slotId ?? null);
     },
 
     clearHighlight() {
-      highlightedBoxId = null;
-      refreshAllMaterials(hierarchyRef);
+      lastHighlightData = null;
+      resetFocus();
+    },
+
+    resetCamera() {
+      resetCamera();
     },
 
     setSearchQuery(query: string) {
-      searchQuery = query.trim();
-      refreshAllMaterials(hierarchyRef);
-      if (!searchQuery) return;
+      const q = query.trim();
+      if (!q || !hierarchyRef) return;
       for (const rack of hierarchyRef.racks) {
         for (const level of rack.levels) {
           for (const box of level.boxes) {
-            if (boxMatchesSearch(box, searchQuery)) {
-              void handle.focusBox(box.id);
+            if (boxMatchesSearch(box, q)) {
+              const mesh = boxMeshes.get(box.id);
+              if (mesh) void focusBox(mesh);
               return;
             }
           }
@@ -369,8 +815,6 @@ export async function initScene(
     },
   };
 
-  (engine as Engine & { __vlResizeHandler?: () => void }).__vlResizeHandler = handleResize;
-
   return handle;
 }
 
@@ -380,10 +824,13 @@ export function disposeScene(): void {
     window.removeEventListener('resize', eng.__vlResizeHandler);
   }
 
+  resetFocusInstant();
   boxMeshes.clear();
-  boxMaterials.clear();
-  highlightedBoxId = null;
-  searchQuery = '';
+  hierarchyRef = null;
+  callbacksRef = null;
+  lastHighlightData = null;
+  originalBoxPosition = null;
+  initialCameraState = null;
 
   scene?.dispose();
   engine?.dispose();

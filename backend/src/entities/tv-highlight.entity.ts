@@ -16,6 +16,9 @@ export class TvHighlight {
   @Column({ name: 'product_name', type: 'varchar', length: 255, nullable: true })
   productName: string | null;
 
+  @Column({ name: 'puid', type: 'varchar', length: 64, nullable: true })
+  puid: string | null;
+
   @Column({ name: 'box_id', type: 'int' })
   boxId: number;
 

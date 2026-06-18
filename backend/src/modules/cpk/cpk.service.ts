@@ -17,6 +17,14 @@ import type { IssuePuidToPicklistDto } from './dto/issue-puid-to-picklist.dto';
 import type { ResPuidRecvDto } from './dto/res-puid-recv.dto';
 import type { StationInvenCheckDto } from './dto/station-inven-check.dto';
 import type { UpdatePuidStatusDto } from './dto/update-puid-status.dto';
+import type { BookingOutPuidDto } from './dto/booking-out-puid.dto';
+import {
+  extractDetailLines,
+  extractRequestBy,
+  filterRequiredOnlyLines,
+  isRequiredOnlyServiceError,
+  stripMetaLines,
+} from './utils/picklist-line.utils';
 
 @Injectable()
 export class CpkService {
@@ -105,28 +113,101 @@ export class CpkService {
     dto: GetPicklistDetailDto,
   ): Promise<CpkResponseBody> {
     this.cpkTokenService.requireMcIdConfigured();
-    return this.postAuthenticated('GetPicklistDetail', {
+    const picklistId = dto.picklistId.trim();
+    const requiredOnly = Boolean(dto.requiredOnly);
+    const basePayload = { PicklistID: picklistId };
+
+    let filteredLocally = false;
+    let sentRequiredOnlyToCpk = false;
+    let data: CpkResponseBody;
+
+    let rawLineCount = 0;
+
+    if (requiredOnly) {
+      sentRequiredOnlyToCpk = true;
+      try {
+        data = await this.postAuthenticated('GetPicklistDetail', {
+          ...basePayload,
+          RequiredOnly: true,
+        });
+        if (String(data.Status ?? '').toUpperCase() === 'E' || isRequiredOnlyServiceError(data.Message)) {
+          throw new BadGatewayException(String(data.Message ?? 'CPK error'));
+        }
+        rawLineCount = extractDetailLines(data).length;
+      } catch {
+        data = await this.postAuthenticated('GetPicklistDetail', basePayload);
+        sentRequiredOnlyToCpk = false;
+        filteredLocally = true;
+        rawLineCount = extractDetailLines(data).length;
+        const filtered = filterRequiredOnlyLines(extractDetailLines(data));
+        data = { ...data, Lines: filtered };
+      }
+    } else {
+      data = await this.postAuthenticated('GetPicklistDetail', basePayload);
+      rawLineCount = extractDetailLines(data).length;
+    }
+    const requestBy = extractRequestBy(extractDetailLines(data));
+    const lines = stripMetaLines(extractDetailLines(data));
+    if (lines.length) {
+      data = { ...data, Lines: lines };
+    }
+
+    return {
+      ...data,
+      Meta: {
+        RequiredOnlyRequested: requiredOnly,
+        RequiredOnlyFilteredLocally: filteredLocally,
+        RequiredOnlySentToCpk: sentRequiredOnlyToCpk,
+        LineCount: lines.length,
+        LineCountRaw: rawLineCount,
+        RequestBy: requestBy,
+        CpkErrCode00008: isRequiredOnlyServiceError(data.Message),
+      },
+    };
+  }
+
+  async issuePuidToPicklistRaw(dto: IssuePuidToPicklistDto): Promise<CpkResponseBody> {
+    this.cpkTokenService.requireMcIdConfigured();
+    const data = await this.postAuthenticated('IssuePUIDToPicklist', {
       PicklistID: dto.picklistId,
+      PUID: dto.puid,
+      Operator: dto.operator,
     });
+    if (String(data.Status ?? '').toUpperCase() === 'E') {
+      throw new BadGatewayException({
+        message: String(data.Message ?? 'IssuePUIDToPicklist failed'),
+        code: 'CPK_ISSUE_FAILED',
+        details: data,
+      });
+    }
+    return data;
   }
 
   async issuePuidToPicklist(
     dto: IssuePuidToPicklistDto,
   ): Promise<CpkResponseBody> {
-    this.cpkTokenService.requireMcIdConfigured();
-    return this.postAuthenticated('IssuePUIDToPicklist', {
-      PicklistID: dto.picklistId,
-      PUID: dto.puid,
-      Operator: dto.operator,
-    });
+    return this.issuePuidToPicklistRaw(dto);
   }
 
   async closePicklist(dto: ClosePicklistDto): Promise<CpkResponseBody> {
     this.cpkTokenService.requireMcIdConfigured();
-    return this.postAuthenticated('ClosePicklist', {
+    const payload: Record<string, unknown> = {
       PicklistID: dto.picklistId,
       Operator: dto.operator,
-    });
+    };
+    if (dto.kitsNote?.trim()) {
+      payload.KitsNote = dto.kitsNote.trim();
+    }
+    const data = await this.postAuthenticated('ClosePicklist', payload);
+    const status = String(data.Status ?? '').toUpperCase();
+    const closeDone =
+      data.CloseDone === true ||
+      status === 'S' ||
+      status === 'SUCCESS';
+    return {
+      ...data,
+      CloseDone: closeDone,
+    };
   }
 
   async stationInvenCheck(
@@ -139,6 +220,15 @@ export class CpkService {
       payload.PicklistID = picklistId;
     }
     return this.postAuthenticated('StationInvenCheck', payload);
+  }
+
+  async bookingOutPuid(dto: BookingOutPuidDto): Promise<CpkResponseBody> {
+    this.cpkTokenService.requireMcIdConfigured();
+    return this.postAuthenticated('BookingOutPUID', {
+      PUID: dto.puid.trim().toUpperCase(),
+      Operator: dto.operator,
+      Destination: dto.destination,
+    });
   }
 
   async clearCache(dto: ClearCacheDto): Promise<CpkResponseBody> {

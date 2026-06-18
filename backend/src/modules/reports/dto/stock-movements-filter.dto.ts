@@ -8,10 +8,13 @@ export class StockMovementsFilterDto extends PaginationDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['add', 'withdraw'], description: 'Filter by action prefix' })
+  @ApiPropertyOptional({
+    enum: ['add', 'withdraw', 'res_receive', 'picklist_issue', 'booking_out'],
+    description: 'Filter by stock log action type',
+  })
   @IsOptional()
-  @IsIn(['add', 'withdraw'])
-  actionFilter?: 'add' | 'withdraw';
+  @IsIn(['add', 'withdraw', 'res_receive', 'picklist_issue', 'booking_out'])
+  actionFilter?: 'add' | 'withdraw' | 'res_receive' | 'picklist_issue' | 'booking_out';
 }
 
 export class StockMovementItemDto {

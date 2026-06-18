@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Box } from '../../../entities/box.entity';
 import { Level } from '../../../entities/level.entity';
 import { Product } from '../../../entities/product.entity';
@@ -25,12 +27,20 @@ import { UpdateSlotDto } from '../dto/update-slot.dto';
 import { BoxRepository } from '../repositories/box.repository';
 import { LevelRepository } from '../repositories/level.repository';
 import { ProductRepository } from '../repositories/product.repository';
+import type {
+  ProductAdminRow,
+  ProductBoxOption,
+  ProductSlotOption,
+} from '../repositories/product.repository';
 import { RackRepository } from '../repositories/rack.repository';
 import { SlotRepository } from '../repositories/slot.repository';
+import { sortBoxesInLevel } from '../utils/box-order.util';
 
 @Injectable()
 export class WarehouseService {
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly rackRepository: RackRepository,
     private readonly levelRepository: LevelRepository,
     private readonly boxRepository: BoxRepository,
@@ -57,9 +67,10 @@ export class WarehouseService {
 
   async getHierarchy(): Promise<WarehouseHierarchyResponseDto> {
     const racks = await this.rackRepository.findAllWithHierarchy();
+    const puidsBySlotId = await this.fetchHierarchyPuids();
 
     return {
-      racks: racks.map((rack) => this.mapRackToHierarchy(rack)),
+      racks: racks.map((rack) => this.mapRackToHierarchy(rack, puidsBySlotId)),
     };
   }
 
@@ -232,6 +243,27 @@ export class WarehouseService {
 
   // --- Product CRUD ---
 
+  findProductsAdmin(boxId?: number): Promise<ProductAdminRow[]> {
+    return this.productRepository.findAllWithLocation(boxId);
+  }
+
+  findProductBoxOptions(): Promise<ProductBoxOption[]> {
+    return this.productRepository.findProductBoxOptions();
+  }
+
+  findEmptyProductSlots(
+    boxId?: number,
+    currentSlotId?: number,
+  ): Promise<ProductSlotOption[]> {
+    return this.productRepository.findEmptySlotOptions(boxId, currentSlotId);
+  }
+
+  findNextEmptyProductSlot(boxId?: number): Promise<{ slotId: number | null }> {
+    return this.productRepository
+      .findFirstEmptySlot(boxId)
+      .then((slotId) => ({ slotId }));
+  }
+
   findAllProducts(): Promise<Product[]> {
     return this.productRepository.findAll();
   }
@@ -249,10 +281,29 @@ export class WarehouseService {
     return product;
   }
 
-  createProduct(dto: CreateProductDto): Promise<Product> {
+  async createProduct(dto: CreateProductDto): Promise<Product> {
+    const name = dto.name?.trim();
+    if (name) {
+      const dup = await this.productRepository.findByName(name);
+      if (dup) {
+        throw new BadRequestException({
+          message: 'This product name already exists',
+          code: 'WAREHOUSE_PRODUCT_NAME_DUPLICATE',
+        });
+      }
+    }
+
+    const slotTaken = await this.productRepository.findOccupyingSlot(dto.slotId);
+    if (slotTaken) {
+      throw new BadRequestException({
+        message: 'This slot already has a product',
+        code: 'WAREHOUSE_SLOT_OCCUPIED',
+      });
+    }
+
     return this.productRepository.create({
       slotId: dto.slotId,
-      name: dto.name ?? null,
+      name: name ?? null,
       qty: dto.qty ?? 0,
       remark: dto.remark ?? null,
     });
@@ -260,6 +311,33 @@ export class WarehouseService {
 
   async updateProduct(id: number, dto: UpdateProductDto): Promise<Product> {
     await this.findProductById(id);
+
+    if (dto.name != null) {
+      const name = dto.name.trim();
+      if (name) {
+        const dup = await this.productRepository.findByName(name, id);
+        if (dup) {
+          throw new BadRequestException({
+            message: 'This product name already exists',
+            code: 'WAREHOUSE_PRODUCT_NAME_DUPLICATE',
+          });
+        }
+      }
+    }
+
+    if (dto.slotId != null) {
+      const slotTaken = await this.productRepository.findOccupyingSlot(
+        dto.slotId,
+        id,
+      );
+      if (slotTaken) {
+        throw new BadRequestException({
+          message: 'This slot already has a product',
+          code: 'WAREHOUSE_SLOT_OCCUPIED',
+        });
+      }
+    }
+
     const updated = await this.productRepository.update(id, dto);
 
     if (!updated) {
@@ -277,38 +355,51 @@ export class WarehouseService {
     await this.productRepository.delete(id);
   }
 
-  private mapRackToHierarchy(rack: Rack): HierarchyRackDto {
+  private mapRackToHierarchy(
+    rack: Rack,
+    puidsBySlotId: Map<number, string[]>,
+  ): HierarchyRackDto {
     return {
       id: rack.id,
       name: rack.name ?? '',
       locationDesc: rack.locationDesc,
-      levels: (rack.levels ?? []).map((level) => this.mapLevelToHierarchy(level)),
+      levels: (rack.levels ?? []).map((level) => this.mapLevelToHierarchy(level, puidsBySlotId)),
     };
   }
 
-  private mapLevelToHierarchy(level: Level): HierarchyLevelDto {
+  private mapLevelToHierarchy(
+    level: Level,
+    puidsBySlotId: Map<number, string[]>,
+  ): HierarchyLevelDto {
     return {
       id: level.id,
       levelNo: level.levelNo ?? 0,
-      boxes: (level.boxes ?? []).map((box) => this.mapBoxToHierarchy(box)),
+      boxes: sortBoxesInLevel(level.boxes ?? []).map((box) => this.mapBoxToHierarchy(box, puidsBySlotId)),
     };
   }
 
-  private mapBoxToHierarchy(box: Box): HierarchyBoxDto {
+  private mapBoxToHierarchy(
+    box: Box,
+    puidsBySlotId: Map<number, string[]>,
+  ): HierarchyBoxDto {
     return {
       id: box.id,
       boxCode: box.boxCode ?? '',
       layout: box.layout,
       positionInLevel: box.positionInLevel,
-      slots: (box.slots ?? []).map((slot) => this.mapSlotToHierarchy(slot)),
+      slots: (box.slots ?? []).map((slot) => this.mapSlotToHierarchy(slot, puidsBySlotId)),
     };
   }
 
-  private mapSlotToHierarchy(slot: Slot): HierarchySlotDto {
+  private mapSlotToHierarchy(
+    slot: Slot,
+    puidsBySlotId: Map<number, string[]>,
+  ): HierarchySlotDto {
     return {
       id: slot.id,
       slotNo: slot.slotNo ?? 0,
       product: slot.product ? this.mapProductToHierarchy(slot.product) : null,
+      puids: puidsBySlotId.get(slot.id) ?? [],
     };
   }
 
@@ -318,5 +409,32 @@ export class WarehouseService {
       name: product.name ?? '',
       qty: product.qty,
     };
+  }
+
+  private async fetchHierarchyPuids(): Promise<Map<number, string[]>> {
+    const rows = await this.dataSource.query<Array<{ slot_id: number; PUID: string }>>(
+      `SELECT DISTINCT sl.id AS slot_id, ir.PUID
+       FROM slots sl
+       JOIN products p ON p.slot_id = sl.id
+       JOIN inventory_receive ir ON ir.HanaPart = p.name
+       WHERE ir.QtyRemain > 0
+         AND ir.StatusName NOT IN ('Withdrawn', 'Empty', 'Is empty')
+       ORDER BY ir.ReceiveDate ASC`,
+    );
+
+    const result = new Map<number, string[]>();
+    for (const row of rows) {
+      const slotId = Number(row.slot_id ?? 0);
+      const puid = String(row.PUID ?? '').trim();
+      if (slotId <= 0 || !puid) {
+        continue;
+      }
+      const list = result.get(slotId) ?? [];
+      if (!list.includes(puid)) {
+        list.push(puid);
+      }
+      result.set(slotId, list);
+    }
+    return result;
   }
 }

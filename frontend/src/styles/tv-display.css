@@ -1,0 +1,461 @@
+/* TV kiosk — parity with PHP tv_display.php */
+
+.tv-page {
+  min-height: 100vh;
+  background: #0f172a;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+}
+
+.tv-header {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  padding: 16px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.tv-header-title {
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.tv-header-subtitle {
+  margin: 4px 0 0;
+  opacity: 0.92;
+  font-size: 0.95rem;
+}
+
+.tv-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tv-sound-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: #ef4444;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.25s, border-color 0.25s;
+}
+
+.tv-sound-btn.active {
+  background: #10b981;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.tv-sound-btn:hover {
+  filter: brightness(1.08);
+}
+
+.tv-clock-block {
+  text-align: right;
+}
+
+.tv-date {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  margin-bottom: 2px;
+}
+
+.tv-clock {
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: 'Roboto Mono', ui-monospace, monospace;
+}
+
+.tv-alert {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  padding: 16px 32px;
+  animation: tvSlideDown 0.45s ease-out;
+  flex-shrink: 0;
+}
+
+.tv-alert-inner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.tv-alert-icon {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.tv-alert-product {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tv-alert-path {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.tv-alert-meta {
+  font-size: 0.9rem;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.tv-alert-puid {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.tv-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 32px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (min-width: 1200px) {
+  .tv-body {
+    flex-direction: row;
+    gap: 0;
+  }
+}
+
+.tv-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-right: 0;
+}
+
+@media (min-width: 1200px) {
+  .tv-body.search-mode .tv-main {
+    padding-right: 24px;
+  }
+}
+
+.tv-section-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f1f5f9;
+}
+
+.tv-rack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  flex: 1;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.tv-rack-grid.search-mode {
+  grid-template-columns: 1fr;
+}
+
+.tv-rack {
+  background: #1e293b;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #334155;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.tv-rack.highlight-active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.06);
+  animation: tvFadeIn 0.4s ease-out;
+}
+
+.tv-rack-grid.search-mode .tv-rack.highlight-active {
+  padding: 10px;
+  background: #1e293b;
+  box-shadow: none;
+  border-color: #334155;
+}
+
+.tv-rack-header {
+  text-align: center;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 10px;
+  margin: -16px -16px 12px;
+  border-radius: 16px 16px 0 0;
+  background: rgba(79, 70, 229, 0.35);
+  color: #e2e8f0;
+}
+
+.tv-rack.highlight-active .tv-rack-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #4f46e5 100%);
+  color: #fff;
+}
+
+.tv-rack-grid.search-mode .tv-rack.highlight-active .tv-rack-header {
+  background: rgba(79, 70, 229, 0.35);
+  color: #e2e8f0;
+}
+
+.tv-level {
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.tv-level.highlight-active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: #3b82f6;
+  box-shadow: inset 0 0 12px rgba(59, 130, 246, 0.15);
+}
+
+.tv-rack-grid.search-mode .tv-level.highlight-active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.tv-level-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tv-level-label {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+}
+
+.tv-level.highlight-active .tv-level-label {
+  color: #3b82f6;
+  font-weight: 800;
+}
+
+.tv-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.tv-box {
+  min-width: 36px;
+  height: 28px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border: 1px solid #475569;
+  cursor: default;
+  transition: transform 0.2s;
+}
+
+.tv-rack-grid.search-mode .tv-rack.highlight-active .tv-box {
+  min-width: 72px;
+  height: 40px;
+  font-size: 1rem;
+  padding: 10px 8px;
+  border-width: 2px;
+}
+
+.tv-box.occupied {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.tv-box.empty {
+  color: #64748b;
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.tv-box.highlighted {
+  color: #fff;
+  background: #3b82f6;
+  border: 2px solid #3b82f6;
+  animation: tvPulse 1.4s ease-in-out infinite;
+}
+
+.tv-detail {
+  width: 100%;
+  border-top: 1px solid #334155;
+  padding: 20px;
+  background: rgba(30, 41, 59, 0.65);
+  overflow: auto;
+  max-height: 45vh;
+}
+
+@media (min-width: 1200px) {
+  .tv-detail {
+    width: 40%;
+    min-width: 360px;
+    max-height: none;
+    border-top: none;
+    border-left: 1px solid #334155;
+  }
+}
+
+.tv-detail-puid-bar {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  color: #fbbf24;
+  font-size: 0.95rem;
+}
+
+.tv-slot-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.tv-slot-cell {
+  min-height: 64px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid #475569;
+}
+
+.tv-slot-cell.highlighted {
+  border: 3px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+}
+
+.tv-slot-cell.occupied {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.tv-slot-cell.empty {
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.tv-puid-chip {
+  font-family: ui-monospace, monospace;
+  font-size: 0.6rem;
+  line-height: 1.2;
+  color: #94a3b8;
+}
+
+.tv-slot-cell.highlighted .tv-puid-chip {
+  color: #fde68a;
+}
+
+.tv-status-bar {
+  flex-shrink: 0;
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  padding: 10px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.tv-status-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tv-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: tvStatusPulse 2s ease-in-out infinite;
+}
+
+.tv-status-dot.offline {
+  background: #ef4444;
+  animation: none;
+}
+
+.tv-waiting {
+  text-align: center;
+  color: #64748b;
+  padding: 40px 20px;
+}
+
+@keyframes tvSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tvFadeIn {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tvPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 14px 4px rgba(59, 130, 246, 0.35);
+  }
+}
+
+@keyframes tvStatusPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}

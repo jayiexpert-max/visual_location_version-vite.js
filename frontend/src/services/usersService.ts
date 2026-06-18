@@ -17,6 +17,10 @@ export async function updateUser(id: number, payload: Record<string, unknown>): 
   return apiPatch<AuthUser>(`/users/${id}`, payload);
 }
 
+export async function toggleUserStatus(id: number, isActive: boolean): Promise<AuthUser> {
+  return apiPatch<AuthUser>(`/users/${id}`, { isActive });
+}
+
 export async function deleteUser(id: number): Promise<void> {
   await apiDelete(`/users/${id}`);
 }

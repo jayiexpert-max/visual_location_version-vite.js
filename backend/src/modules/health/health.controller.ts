@@ -10,6 +10,7 @@ import { PdserviceService } from '../pdservice/pdservice.service';
 import { MqttHealthService } from '../mqtt/mqtt-health.service';
 import { IoService } from '../io/io.service';
 import { HighlightGateway } from '../realtime/highlight.gateway';
+import { CpkEndpointHealthService } from './cpk-endpoint-health.service';
 import { DatabaseHealthService } from './database-health.service';
 import { SystemMetricsService } from './system-metrics.service';
 
@@ -23,6 +24,7 @@ export class HealthController {
     private readonly mqttHealthService: MqttHealthService,
     private readonly ioService: IoService,
     private readonly databaseHealthService: DatabaseHealthService,
+    private readonly cpkEndpointHealthService: CpkEndpointHealthService,
     private readonly systemMetricsService: SystemMetricsService,
     private readonly highlightGateway: HighlightGateway,
   ) {}
@@ -123,6 +125,13 @@ export class HealthController {
         code: 'CPK_UNAVAILABLE',
       };
     }
+  }
+
+  @Public()
+  @Get('cpk/endpoints')
+  @ApiOperation({ summary: 'CPK endpoint latency checks' })
+  cpkEndpoints() {
+    return this.cpkEndpointHealthService.checkAll();
   }
 
   @Public()

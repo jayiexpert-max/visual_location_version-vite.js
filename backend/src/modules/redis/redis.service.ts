@@ -14,6 +14,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private available = false;
+  private redisErrorLogged = false;
   private readonly memoryPresence = new Map<
     number,
     { online: boolean; ip: string; expiresAt: number }
@@ -34,19 +35,31 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         connectTimeout: 5000,
+        retryStrategy: (times) => (times > 3 ? null : Math.min(times * 500, 2000)),
       });
 
       this.client.on('error', (error) => {
         this.available = false;
-        this.logger.warn(`Redis error: ${error.message}`);
+        if (!this.redisErrorLogged) {
+          this.redisErrorLogged = true;
+          this.logger.warn(
+            `Redis unavailable, using in-memory fallback: ${error.message}`,
+          );
+        }
       });
 
       void this.client.connect().then(() => {
         this.available = true;
+        this.redisErrorLogged = false;
         this.logger.log(`Connected to Redis at ${host}:${port}`);
       }).catch((error: Error) => {
         this.available = false;
-        this.logger.warn(`Redis unavailable, using in-memory fallback: ${error.message}`);
+        if (!this.redisErrorLogged) {
+          this.redisErrorLogged = true;
+          this.logger.warn(
+            `Redis unavailable, using in-memory fallback: ${error.message}`,
+          );
+        }
       });
     } catch (error) {
       this.available = false;

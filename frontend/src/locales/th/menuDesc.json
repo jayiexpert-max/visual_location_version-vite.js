@@ -1,0 +1,20 @@
+{
+  "search": "หาสินค้าและตำแหน่ง",
+  "receiveReservation": "รับเข้าตาม RES",
+  "receiveReturn": "รับเข้าและจัดเก็บ",
+  "hanaPicklist": "สร้าง Picklist บน HANA",
+  "picklist": "จ่ายตาม Picklist",
+  "bookingOut": "ส่งออก STORE/OTHER",
+  "woMaterialCalc": "BOM ตาม WO เทียบสต็อก",
+  "rackOverview": "แผนผัง Rack และ Box",
+  "tvDisplay": "ตำแหน่งบนจอ TV",
+  "layout3d": "ผังคลัง 3D",
+  "abdulAi": "ถามข้อมูลสต็อก",
+  "stockReports": "ประวัติรับ-เบิก",
+  "expiryCheck": "ของใกล้หมด/หมดอายุ",
+  "materials": "Materials และ BOM",
+  "userManagement": "สิทธิ์ผู้ใช้",
+  "receiveList": "ค้นหา/Export รับเข้า",
+  "systemAdmin": "Rack, Box, Master",
+  "handheld": "หน้าจอ Keyence BT-A500"
+}

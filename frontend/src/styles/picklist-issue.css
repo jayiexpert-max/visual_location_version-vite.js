@@ -1,0 +1,139 @@
+.fx-picklist-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.fx-picklist-panel-title {
+    margin: 0;
+}
+
+.fx-picklist-detail-hint {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+}
+
+.factory-app .fx-btn--compact {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.fx-picklist-close-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: rgba(15, 23, 42, 0.55);
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.fx-picklist-close-modal.is-open {
+    display: flex;
+}
+
+.fx-picklist-close-dialog {
+    background: #fff;
+    border-radius: 16px;
+    max-width: 440px;
+    width: 100%;
+    padding: 1.5rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+}
+
+.fx-picklist-close-dialog h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1.15rem;
+    color: #0f172a;
+}
+
+.fx-picklist-close-dialog p {
+    margin: 0 0 1rem;
+    color: #475569;
+    line-height: 1.5;
+}
+
+.fx-picklist-close-dialog label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+    color: #334155;
+}
+
+.fx-picklist-close-dialog textarea {
+    width: 100%;
+    min-height: 72px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.fx-picklist-close-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1.25rem;
+}
+
+.fx-picklist-fifo-body p {
+    margin: 0 0 0.75rem;
+    color: #475569;
+    line-height: 1.5;
+}
+
+.fx-picklist-fifo-roll-list {
+    margin: 0.35rem 0 0;
+    padding-left: 1.15rem;
+    color: #334155;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.fx-picklist-fifo-roll-list li {
+    margin-bottom: 0.2rem;
+}
+
+.fx-picklist-fifo-more {
+    color: #64748b;
+    font-style: italic;
+}
+
+.fx-picklist-fifo-inline {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.fx-picklist-fifo-dialog {
+    max-width: 480px;
+}
+
+.fx-picklist-muted {
+    color: #94a3b8;
+}
+
+.factory-app #detailTable.fx-picklist-table tr.fx-picklist-inactive > td {
+    color: #94a3b8;
+    background-color: #f8fafc !important;
+}
+
+.factory-app #detailTable.fx-picklist-table tr.fx-picklist-inactive:hover > td {
+    background-color: #f1f5f9 !important;
+}
+
+.factory-app #detailTable.fx-picklist-table tr.fx-picklist-inactive.fx-picklist-selected > td {
+    background-color: #f1f5f9 !important;
+}
+
+.factory-app #detailTable.fx-picklist-table tr.fx-picklist-marked-x > td {
+    background-color: #f8fafc !important;
+}

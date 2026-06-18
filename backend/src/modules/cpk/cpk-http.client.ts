@@ -18,6 +18,8 @@ const CPK_PATHS: Record<CpkLogicalEndpoint, string> = {
   GetPicklistDetail: 'GetPicklistDetail/',
   ClosePicklist: 'ClosePicklist/',
   StationInvenCheck: 'StationInvenCheck/',
+  BookingOutPUID: 'BookingOutPUID/',
+  GET_WOBOMInfo: 'GET_WOBOMInfo',
   ClearCache: 'ClearCache/',
 };
 

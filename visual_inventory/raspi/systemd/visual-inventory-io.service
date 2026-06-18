@@ -1,0 +1,17 @@
+[Unit]
+Description=Visual Inventory IO Gateway (Raspberry Pi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/visual-inventory-io
+Environment=VISUAL_INVENTORY_IO_ENV=/etc/visual-inventory-io/env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/visual-inventory-io/venv/bin/python /opt/visual-inventory-io/run.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

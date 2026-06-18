@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Camera Scanner</title>
+</head>
+<body>
+    <h1>Test Camera Scanner</h1>
+    <button onclick="testFunction()">Test Button</button>
+    <div id="result"></div>
+
+    <script src="plugins/sweetalert2/sweetalert2.all.min.js"></script>
+    <script src="plugins/html5-qrcode/html5-qrcode.min.js"></script>
+    <script>
+        function testFunction() {
+            document.getElementById('result').innerHTML = 'Button clicked!<br>';
+            
+            // Test SweetAlert2
+            if (typeof Swal !== 'undefined') {
+                document.getElementById('result').innerHTML += 'SweetAlert2: ✅ Loaded<br>';
+                Swal.fire('Success!', 'SweetAlert2 is working', 'success');
+            } else {
+                document.getElementById('result').innerHTML += 'SweetAlert2: ❌ NOT Loaded<br>';
+            }
+            
+            // Test Html5Qrcode
+            if (typeof Html5Qrcode !== 'undefined') {
+                document.getElementById('result').innerHTML += 'Html5Qrcode: ✅ Loaded<br>';
+            } else {
+                document.getElementById('result').innerHTML += 'Html5Qrcode: ❌ NOT Loaded<br>';
+            }
+        }
+        
+        console.log('Script loaded');
+        console.log('Swal:', typeof Swal);
+        console.log('Html5Qrcode:', typeof Html5Qrcode);
+    </script>
+</body>
+</html>

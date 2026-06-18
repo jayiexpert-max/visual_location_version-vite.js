@@ -14,6 +14,10 @@ export class InventoryProductRepository {
     return this.repository.findOne({ where: { slotId } });
   }
 
+  findBySlotIdAndName(slotId: number, name: string): Promise<Product | null> {
+    return this.repository.findOne({ where: { slotId, name } });
+  }
+
   findByName(name: string): Promise<Product[]> {
     return this.repository.find({ where: { name } });
   }

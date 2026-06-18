@@ -13,6 +13,11 @@ export class SetTvHighlightDto {
   @IsString()
   productName?: string;
 
+  @ApiPropertyOptional({ example: 'ABC123456789' })
+  @IsOptional()
+  @IsString()
+  puid?: string;
+
   @ApiProperty({ example: 42 })
   @IsInt()
   @Min(1)
@@ -62,6 +67,9 @@ export class TvHighlightResponseDto {
 
   @ApiPropertyOptional()
   productName: string | null;
+
+  @ApiPropertyOptional()
+  puid: string | null;
 
   @ApiProperty()
   boxId: number;

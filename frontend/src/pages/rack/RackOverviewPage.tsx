@@ -1,92 +1,278 @@
-import {
-  Alert,
-  Box,
-  Breadcrumbs,
-  Card,
-  CardActionArea,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Grid2 as Grid,
-  Link,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import GridViewIcon from '@mui/icons-material/GridView';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import LayersIcon from '@mui/icons-material/Layers';
+import TableRowsIcon from '@mui/icons-material/TableRows';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
-import WarehouseIcon from '@mui/icons-material/Warehouse';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { CircularProgress } from '@mui/material';
 import { PageHeader } from '../../components/layout/PageHeader';
 import * as warehouseService from '../../services/warehouseService';
 import { getErrorMessage } from '../../services/apiClient';
 import type {
   HierarchyBox,
-  HierarchyLevel,
   HierarchyRack,
-  HierarchySlot,
   WarehouseHierarchy,
 } from '../../types/warehouse';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SocketEvents } from '../../services/socketService';
+import { useAuthStore } from '../../store/authStore';
 import { BoxLayoutPanel } from './BoxLayoutPanel';
 
-type DrillLevel = 'warehouse' | 'rack' | 'level' | 'box';
+const ROWS_PER_PAGE = 10;
 
-function slotOccupancy(slots: HierarchySlot[]) {
-  const filled = slots.filter((s) => s.product).length;
-  return { filled, total: slots.length };
+// ─── Occupancy helpers ────────────────────────────────────────────────────────
+
+function boxQty(box: HierarchyBox): number {
+  return box.slots.reduce((s, sl) => {
+    const puidQty = sl.puids?.length ?? 0;
+    return s + Math.max(sl.product?.qty ?? 0, puidQty);
+  }, 0);
 }
 
-function boxOccupancy(box: HierarchyBox) {
-  return slotOccupancy(box.slots);
+function rackStats(rack: HierarchyRack) {
+  let totalQty = 0;
+  let activeBoxes = 0;
+  let totalBoxes = 0;
+  for (const level of rack.levels) {
+    for (const box of level.boxes) {
+      totalBoxes++;
+      const q = boxQty(box);
+      totalQty += q;
+      if (q > 0) activeBoxes++;
+    }
+  }
+  return { totalQty, activeBoxes, totalBoxes };
 }
 
-function levelOccupancy(level: HierarchyLevel) {
-  return level.boxes.reduce(
-    (acc, box) => {
-      const o = boxOccupancy(box);
-      return { filled: acc.filled + o.filled, total: acc.total + o.total };
-    },
-    { filled: 0, total: 0 },
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatCard({
+  icon,
+  value,
+  label,
+  iconClass,
+}: {
+  icon: ReactNode;
+  value: number;
+  label: string;
+  iconClass: string;
+}) {
+  return (
+    <div className="stat-card">
+      <div className={`stat-icon ${iconClass}`}>{icon}</div>
+      <div className="stat-info">
+        <h3>{value.toLocaleString()}</h3>
+        <p>{label}</p>
+      </div>
+    </div>
   );
 }
 
-function rackOccupancy(rack: HierarchyRack) {
-  return rack.levels.reduce(
-    (acc, level) => {
-      const o = levelOccupancy(level);
-      return { filled: acc.filled + o.filled, total: acc.total + o.total };
-    },
-    { filled: 0, total: 0 },
+function BoxBadge({
+  box,
+  onSelect,
+}: {
+  box: HierarchyBox;
+  onSelect: (box: HierarchyBox) => void;
+}) {
+  const qty = boxQty(box);
+  const active = qty > 0;
+  return (
+    <button
+      type="button"
+      className={`box-item ${active ? 'status-active' : 'status-empty'}`}
+      title={`Box: ${box.boxCode} | Qty: ${qty}`}
+      onClick={() => onSelect(box)}
+    >
+      {box.boxCode}
+      <span className={`box-badge ${active ? 'box-badge-active' : 'box-badge-empty'}`}>
+        {qty}
+      </span>
+    </button>
   );
 }
 
-function OccupancyChip({ filled, total }: { filled: number; total: number }) {
-  const { t } = useTranslation('pages');
-  const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
-  const empty = filled === 0;
+function GridView({
+  hierarchy,
+  onBoxSelect,
+}: {
+  hierarchy: WarehouseHierarchy;
+  onBoxSelect: (box: HierarchyBox) => void;
+}) {
+  return (
+    <div className="rack-grid">
+      {hierarchy.racks.map((rack) => (
+        <div key={rack.id} className="rack-card">
+          <div className="rack-header">Rack {rack.name}</div>
+          <div className="rack-body">
+            {rack.levels.map((level) => (
+              <div key={level.id} className="level-row">
+                <span className="level-label">Level {level.levelNo}</span>
+                <div className="box-container">
+                  {level.boxes.map((box) => (
+                    <BoxBadge key={box.id} box={box} onSelect={onBoxSelect} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface FlatRow {
+  rackName: string;
+  levelNo: number;
+  box: HierarchyBox;
+  qty: number;
+  hanaParts: string[];
+}
+
+function buildFlatRows(hierarchy: WarehouseHierarchy): FlatRow[] {
+  const rows: FlatRow[] = [];
+  for (const rack of hierarchy.racks) {
+    for (const level of rack.levels) {
+      for (const box of level.boxes) {
+        const qty = boxQty(box);
+        const parts = box.slots
+          .filter((s) => s.product && Math.max(s.product.qty, s.puids?.length ?? 0) > 0 && s.product.name.trim())
+          .map((s) => s.product!.name.trim());
+        const unique = [...new Set(parts)];
+        rows.push({ rackName: rack.name, levelNo: level.levelNo, box, qty, hanaParts: unique });
+      }
+    }
+  }
+  return rows;
+}
+
+function TableView({
+  hierarchy,
+  onBoxSelect,
+}: {
+  hierarchy: WarehouseHierarchy;
+  onBoxSelect: (box: HierarchyBox) => void;
+}) {
+  const { t } = useTranslation(['pages', 'common']);
+  const [page, setPage] = useState(1);
+  const rows = useMemo(() => buildFlatRows(hierarchy), [hierarchy]);
+  const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
+  const sliced = rows.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+
+  const pageNums = useMemo(() => {
+    const nums: (number | 0)[] = [];
+    const radius = 2;
+    const start = Math.max(1, page - radius);
+    const end = Math.min(totalPages, page + radius);
+    if (start > 1) { nums.push(1); if (start > 2) nums.push(0); }
+    for (let i = start; i <= end; i++) nums.push(i);
+    if (end < totalPages) { if (end < totalPages - 1) nums.push(0); nums.push(totalPages); }
+    return nums;
+  }, [page, totalPages]);
 
   return (
-    <Chip
-      size="small"
-      label={`${t('occupancy')} ${filled}/${total} (${pct}%)`}
-      color={empty ? 'default' : filled === total ? 'success' : 'warning'}
-      variant={empty ? 'outlined' : 'filled'}
-    />
+    <div>
+      <div className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Rack</th>
+              <th>{t('pages:layout3dLevel')}</th>
+              <th>{t('pages:searchBoxDetails')}</th>
+              <th>HanaPart</th>
+              <th>{t('pages:addStockQtyFull')}</th>
+              <th>{t('common:status')}</th>
+              <th>{t('common:manage')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sliced.map(({ rackName, levelNo, box, qty, hanaParts }) => (
+              <tr key={box.id}>
+                <td>Rack {rackName}</td>
+                <td>Level {levelNo}</td>
+                <td style={{ fontWeight: 600 }}>{box.boxCode}</td>
+                <td style={{ fontSize: '0.9rem', color: '#334155', maxWidth: 280, wordBreak: 'break-word' }}>
+                  {hanaParts.length ? hanaParts.join(', ') : '—'}
+                </td>
+                <td style={qty === 0 ? { color: '#ef4444', fontWeight: 700 } : {}}>
+                  {qty.toLocaleString()}
+                </td>
+                <td>
+                  <span className={`badge ${qty > 0 ? 'badge-active' : 'badge-empty'}`}>
+                    {qty > 0 ? t('pages:searchOccupied') : t('pages:searchNoProduct')}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn-white"
+                    style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                    onClick={() => onBoxSelect(box)}
+                  >
+                    {t('pages:searchBoxDetails')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination-container">
+          <button
+            className={`page-btn${page <= 1 ? ' disabled' : ''}`}
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            <ChevronLeftIcon fontSize="small" />
+          </button>
+          {pageNums.map((p, i) =>
+            p === 0 ? (
+              <span key={`ellipsis-${i}`} className="page-ellipsis">…</span>
+            ) : (
+              <button
+                key={p}
+                className={`page-btn${p === page ? ' active' : ''}`}
+                onClick={() => setPage(p)}
+              >
+                {p}
+              </button>
+            ),
+          )}
+          <button
+            className={`page-btn${page >= totalPages ? ' disabled' : ''}`}
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            <ChevronRightIcon fontSize="small" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function RackOverviewPage() {
   const { t } = useTranslation(['pages', 'common']);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const socketAuth = useMemo(
+    () => (accessToken ? { token: accessToken } : undefined),
+    [accessToken],
+  );
+
   const [hierarchy, setHierarchy] = useState<WarehouseHierarchy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'grid' | 'table'>('grid');
 
-  const [drillLevel, setDrillLevel] = useState<DrillLevel>('warehouse');
-  const [selectedRack, setSelectedRack] = useState<HierarchyRack | null>(null);
-  const [selectedLevel, setSelectedLevel] = useState<HierarchyLevel | null>(null);
   const [selectedBox, setSelectedBox] = useState<HierarchyBox | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -97,7 +283,7 @@ export function RackOverviewPage() {
       const data = await warehouseService.getHierarchy();
       setHierarchy(data);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setLoading(false);
     }
@@ -107,221 +293,104 @@ export function RackOverviewPage() {
     void loadHierarchy();
   }, [loadHierarchy]);
 
-  useSocketEvent<{ boxId?: number; rackId?: number }>(
+  useSocketEvent<{ boxId?: number }>(
     SocketEvents.inventoryUpdate,
-    () => {
-      void loadHierarchy();
-    },
+    () => { void loadHierarchy(); },
     true,
+    socketAuth,
   );
 
-  const breadcrumbs = useMemo(() => {
-    const items = [{ label: t('warehouseView'), onClick: () => resetDrill('warehouse') }];
-    if (selectedRack) {
-      items.push({ label: selectedRack.name, onClick: () => resetDrill('rack') });
+  const stats = useMemo(() => {
+    if (!hierarchy) return { totalProducts: 0, totalRacks: 0, totalBoxes: 0, activeBoxes: 0 };
+    let totalProducts = 0;
+    let totalBoxes = 0;
+    let activeBoxes = 0;
+    for (const rack of hierarchy.racks) {
+      const rs = rackStats(rack);
+      totalProducts += rs.totalQty;
+      totalBoxes += rs.totalBoxes;
+      activeBoxes += rs.activeBoxes;
     }
-    if (selectedLevel) {
-      items.push({ label: `L${selectedLevel.levelNo}`, onClick: () => resetDrill('level') });
-    }
-    if (selectedBox) {
-      items.push({ label: selectedBox.boxCode, onClick: () => {} });
-    }
-    return items;
-  }, [selectedRack, selectedLevel, selectedBox, t]);
-
-  function resetDrill(level: DrillLevel) {
-    setDrillLevel(level);
-    if (level === 'warehouse') {
-      setSelectedRack(null);
-      setSelectedLevel(null);
-      setSelectedBox(null);
-      setPanelOpen(false);
-    } else if (level === 'rack') {
-      setSelectedLevel(null);
-      setSelectedBox(null);
-      setPanelOpen(false);
-    } else if (level === 'level') {
-      setSelectedBox(null);
-      setPanelOpen(false);
-    }
-  }
-
-  const handleRackSelect = (rack: HierarchyRack) => {
-    setSelectedRack(rack);
-    setDrillLevel('rack');
-  };
-
-  const handleLevelSelect = (level: HierarchyLevel) => {
-    setSelectedLevel(level);
-    setDrillLevel('level');
-  };
+    return { totalProducts, totalRacks: hierarchy.racks.length, totalBoxes, activeBoxes };
+  }, [hierarchy]);
 
   const handleBoxSelect = (box: HierarchyBox) => {
     setSelectedBox(box);
-    setDrillLevel('box');
     setPanelOpen(true);
   };
 
-  const warehouseOccupancy = useMemo(() => {
-    if (!hierarchy) return { filled: 0, total: 0 };
-    return hierarchy.racks.reduce(
-      (acc, rack) => {
-        const o = rackOccupancy(rack);
-        return { filled: acc.filled + o.filled, total: acc.total + o.total };
-      },
-      { filled: 0, total: 0 },
-    );
-  }, [hierarchy]);
-
   return (
     <>
-      <PageHeader
-        title={t('rackTitle')}
-        action={
-          <Chip
-            icon={<WarehouseIcon />}
-            label={`${warehouseOccupancy.filled}/${warehouseOccupancy.total} ${t('occupancy').toLowerCase()}`}
-            color="primary"
-            variant="outlined"
-          />
-        }
-      />
+      <PageHeader title={t('rackTitle')} />
 
+      {/* Toolbar */}
+      <div className="fx-scan-toolbar" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className={`fx-btn fx-btn-secondary${view === 'grid' ? ' active' : ''}`}
+          id="btnGrid"
+          onClick={() => setView('grid')}
+        >
+          <GridViewIcon fontSize="small" /> {t('pages:rackViewGrid')}
+        </button>
+        <button
+          type="button"
+          className={`fx-btn fx-btn-secondary${view === 'table' ? ' active' : ''}`}
+          id="btnTable"
+          onClick={() => setView('table')}
+        >
+          <TableRowsIcon fontSize="small" /> {t('pages:rackViewTable')}
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="stats-grid">
+        <StatCard
+          icon={<Inventory2Icon />}
+          value={stats.totalProducts}
+          label={t('pages:rackStatProducts')}
+          iconClass="stat-icon--rack-qty"
+        />
+        <StatCard
+          icon={<ViewModuleIcon />}
+          value={stats.totalBoxes}
+          label={t('pages:rackStatBoxes')}
+          iconClass="stat-icon--rack-boxes"
+        />
+        <StatCard
+          icon={<LayersIcon />}
+          value={stats.totalRacks}
+          label={t('pages:rackStatRacks')}
+          iconClass="stat-icon--rack-racks"
+        />
+        <StatCard
+          icon={<CheckCircleOutlineIcon />}
+          value={stats.activeBoxes}
+          label={t('pages:rackStatActive')}
+          iconClass="stat-icon--rack-active"
+        />
+      </div>
+
+      {/* Error */}
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <div className="message warning" style={{ marginBottom: '1rem' }}>
           {error}
-        </Alert>
+          <button type="button" style={{ marginLeft: 8 }} onClick={() => setError(null)}>✕</button>
+        </div>
       )}
 
-      <Breadcrumbs sx={{ mb: 3 }}>
-        {breadcrumbs.map((item, index) => {
-          const isLast = index === breadcrumbs.length - 1;
-          return isLast ? (
-            <Typography key={item.label} color="text.primary" fontWeight={600}>
-              {item.label}
-            </Typography>
-          ) : (
-            <Link
-              key={item.label}
-              component="button"
-              underline="hover"
-              color="inherit"
-              onClick={item.onClick}
-              sx={{ cursor: 'pointer', border: 0, background: 'none', font: 'inherit' }}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </Breadcrumbs>
-
+      {/* Loading */}
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+          <CircularProgress size={36} />
+          <p style={{ marginTop: 12 }}>{t('common:loading')}</p>
+        </div>
       ) : !hierarchy?.racks.length ? (
-        <Typography color="text.secondary">{t('common:noData')}</Typography>
+        <p style={{ color: '#64748b' }}>{t('common:noData')}</p>
+      ) : view === 'grid' ? (
+        <GridView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />
       ) : (
-        <Grid container spacing={2}>
-          {drillLevel === 'warehouse' &&
-            hierarchy.racks.map((rack) => {
-              const occ = rackOccupancy(rack);
-              return (
-                <Grid key={rack.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-                  <Card variant="outlined" sx={{ height: '100%' }}>
-                    <CardActionArea onClick={() => handleRackSelect(rack)} sx={{ height: '100%' }}>
-                      <CardContent>
-                        <Stack spacing={1.5}>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <WarehouseIcon color="primary" />
-                            <Typography variant="h6" fontWeight={700}>
-                              {rack.name}
-                            </Typography>
-                          </Stack>
-                          {rack.locationDesc && (
-                            <Typography variant="body2" color="text.secondary">
-                              {rack.locationDesc}
-                            </Typography>
-                          )}
-                          <Typography variant="body2">
-                            {rack.levels.length} levels
-                          </Typography>
-                          <OccupancyChip filled={occ.filled} total={occ.total} />
-                        </Stack>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                </Grid>
-              );
-            })}
-
-          {drillLevel === 'rack' && selectedRack &&
-            selectedRack.levels.map((level) => {
-              const occ = levelOccupancy(level);
-              return (
-                <Grid key={level.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                  <Card variant="outlined">
-                    <CardActionArea onClick={() => handleLevelSelect(level)}>
-                      <CardContent>
-                        <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-                          <LayersIcon color="secondary" />
-                          <Typography variant="h6" fontWeight={700}>
-                            Level {level.levelNo}
-                          </Typography>
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary" mb={1}>
-                          {level.boxes.length} boxes
-                        </Typography>
-                        <OccupancyChip filled={occ.filled} total={occ.total} />
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                </Grid>
-              );
-            })}
-
-          {drillLevel === 'level' && selectedLevel &&
-            selectedLevel.boxes.map((box) => {
-              const occ = boxOccupancy(box);
-              const empty = occ.filled === 0;
-              return (
-                <Grid key={box.id} size={{ xs: 6, sm: 4, md: 3 }}>
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderColor: empty ? 'divider' : 'success.main',
-                      bgcolor: empty ? 'background.paper' : 'success.light',
-                    }}
-                  >
-                    <CardActionArea onClick={() => handleBoxSelect(box)}>
-                      <CardContent sx={{ textAlign: 'center' }}>
-                        <ViewModuleIcon
-                          sx={{ fontSize: 36, mb: 1, color: empty ? 'text.disabled' : 'success.dark' }}
-                        />
-                        <Typography variant="subtitle1" fontWeight={700}>
-                          {box.boxCode}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {box.layout}
-                        </Typography>
-                        <Box mt={1}>
-                          <OccupancyChip filled={occ.filled} total={occ.total} />
-                        </Box>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                </Grid>
-              );
-            })}
-
-          {drillLevel === 'box' && selectedLevel && (
-            <Grid size={12}>
-              <Alert severity="info" icon={<Inventory2Icon />}>
-                {t('common:openLocation')} — {selectedLevel.boxes.length} boxes on L{selectedLevel.levelNo}
-              </Alert>
-            </Grid>
-          )}
-        </Grid>
+        <TableView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />
       )}
 
       <BoxLayoutPanel
@@ -330,7 +399,7 @@ export function RackOverviewPage() {
         boxCode={selectedBox?.boxCode}
         onClose={() => {
           setPanelOpen(false);
-          if (drillLevel === 'box') setDrillLevel('level');
+          setSelectedBox(null);
         }}
       />
     </>

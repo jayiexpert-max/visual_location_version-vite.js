@@ -1,0 +1,17 @@
+---
+description: NestJS backend conventions for Visual Location API
+globs: backend/**/*.ts
+alwaysApply: false
+---
+
+# Backend (NestJS)
+
+- API prefix: `api/v1`. Swagger at `/api/docs` (development only).
+- Auth: JWT bearer (`JwtAuthGuard` global). Public routes use `@Public()`. Roles via `@Roles()`.
+- Errors: throw `HttpException` with `{ message, code }` using codes from `common/constants/error-codes.ts`.
+- Audit sensitive actions via injected `AuditService` (global module).
+- Inventory stock lives in `products` + `inventory_receive`; do not query legacy `materials` unless adding a new module.
+- CPK calls optional — gate on `CpkTokenService.getMcId()` before `resPuidRecv` / `updatePuidStatus`.
+- MQTT/Redis: log connection failures once; use fallbacks. Do not spam reconnect logs.
+- PHP bcrypt: normalize `$2y$` → `$2a$` before `bcrypt.compare` in auth.
+- After edits: `cd backend && npm run build && npm test`.

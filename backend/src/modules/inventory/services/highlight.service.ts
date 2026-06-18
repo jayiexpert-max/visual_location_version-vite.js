@@ -7,12 +7,27 @@ import {
   HighlightDto,
   HighlightResponseDto,
 } from '../dto/highlight.dto';
+import { InventoryReceiveRepository } from '../repositories/inventory-receive.repository';
 import { InventoryService } from './inventory.service';
+
+function puidLookupCandidates(puid: string): string[] {
+  const trimmed = puid.trim();
+  if (!trimmed) return [];
+  const stripped = trimmed.toUpperCase().replace(/^VL/i, '');
+  return [
+    ...new Set(
+      [trimmed, trimmed.toUpperCase(), stripped, stripped ? `VL${stripped}` : ''].filter(
+        Boolean,
+      ),
+    ),
+  ];
+}
 
 @Injectable()
 export class HighlightService {
   constructor(
     private readonly inventoryService: InventoryService,
+    private readonly inventoryReceiveRepository: InventoryReceiveRepository,
     private readonly boxRepository: BoxRepository,
     private readonly tvService: TvService,
     private readonly ioService: IoService,
@@ -34,11 +49,17 @@ export class HighlightService {
       });
     }
 
+    const receive = await this.inventoryReceiveRepository.findByPuidCandidates(
+      puidLookupCandidates(dto.query),
+    );
+    const highlightPuid = receive?.puid?.trim() || null;
+
     const box = await this.boxRepository.findByIdWithSlots(location.box_id);
 
     const tv = await this.tvService.setHighlight(
       {
         productName: location.part_name,
+        puid: highlightPuid ?? undefined,
         boxId: location.box_id,
         slotId: location.slot_id,
         slotNo: location.slot_no,
@@ -87,6 +108,7 @@ export class HighlightService {
       tv: {
         highlightSeq: tv.highlightSeq,
         productName: tv.productName ?? location.part_name,
+        puid: tv.puid ?? highlightPuid,
         boxId: tv.boxId,
         slotId: tv.slotId ?? location.slot_id,
         slotNo: tv.slotNo ?? location.slot_no,

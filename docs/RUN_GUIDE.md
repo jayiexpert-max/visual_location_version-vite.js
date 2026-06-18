@@ -80,16 +80,33 @@ mysql -u root visual_inventory_db < backend/database/migrations/001_additive_pha
 #### กรณี B: สร้าง Database ใหม่ทั้งหมด
 
 ```bash
-# Schema เปล่า (ไม่มี user)
-mysql -u root < backend/database/schema/000_full_schema.sql
+npm run db:init
+npm run db:verify
 ```
 
-หรือ import ข้อมูลจาก PHP dump แล้วตามด้วย migration:
+หรือใช้ mysql โดยตรง:
 
 ```bash
-mysql -u root visual_inventory_db < /Applications/XAMPP/xamppfiles/htdocs/visual_inventory/visual_inventory_db.sql
+mysql -u root < backend/database/init/01_full_schema.sql
+mysql -u root visual_inventory_db < backend/database/migrations/002_phase4_iot.sql
+mysql -u root visual_inventory_db < backend/database/migrations/003_phase6_production.sql
+```
+
+#### กรณี C: ใช้ DB เดิมจาก PHP + migration ครบ
+
+```bash
+mysql -u root visual_inventory_db < /path/to/visual_inventory/visual_inventory_db.sql
+npm run db:migrate
+npm run db:verify
+```
+
+#### กรณี D: ใช้ DB เดิมจาก PHP (migration 001 อย่างเดียว — แบบเดิม)
+
+```bash
 mysql -u root visual_inventory_db < backend/database/migrations/001_additive_phase1.sql
 ```
+
+> แนะนำใช้ `npm run db:migrate` แทน เพื่อได้ตาราง IoT และ audit ครบ
 
 ### ขั้นตอนที่ 4 — ตั้งค่า Environment
 
@@ -348,8 +365,51 @@ CORS_ORIGINS=http://localhost:5173,http://192.168.1.100:5173
 | CPK / PDService error | ไม่อยู่ใน factory LAN | ปกติ — เมนูอื่นยังใช้ได้ |
 | MQTT / IO ไม่ทำงาน | Mosquitto ไม่ได้รัน | `docker compose up -d mosquitto` |
 | Frontend เรียก API ไม่ได้ | `.env` ผิด | ตรวจ `VITE_API_BASE_URL` และว่า API รันอยู่ |
+| ฟอนต์/ไอคอนหาย (offline) | ยังใช้ CDN หรือไม่มี `plugins/` | รัน `npm run sync:offline-assets` แล้ว build ใหม่ — ตรวจ `/plugins/google-fonts/` และ `/plugins/font-awesome/` |
 
 ---
+
+## Offline / Local Server (ไม่มี Internet)
+
+Frontend ใช้ฟอนต์และไอคอนแบบ self-hosted ใน `frontend/public/plugins/` (ไม่พึ่ง Google Fonts CDN):
+
+| โฟลเดอร์ | เนื้อหา |
+|----------|---------|
+| `plugins/google-fonts/` | Outfit + Sarabun (woff2 + fonts.css) |
+| `plugins/font-awesome/` | Font Awesome 6 (all.css + webfonts) |
+
+ซิงก์จากโปรเจ็กต์ PHP (ถ้ามีการอัปเดต):
+
+```bash
+npm run sync:offline-assets
+```
+
+ตรวจหลัง deploy (ปิด internet แล้ว refresh):
+
+```bash
+curl -I http://<FRONTEND_IP>/plugins/google-fonts/files/outfit-latin-400-normal.woff2
+curl -I http://<FRONTEND_IP>/plugins/font-awesome/webfonts/fa-solid-900.woff2
+```
+
+หมายเหตุ: รูปพนักงาน (`199.10.10.170/Allpic`) และลิงก์ CPK เป็น **LAN ภายในโรงงาน** ไม่ใช่ internet — ต้องเข้าถึงได้จากเครือข่ายโรงงานเท่านั้น
+
+---
+
+## Handheld (Keyence BT-A500)
+
+UI แบบ dark full-screen เหมือน `ui_preview.php` / PHP handheld — ปุ่มใหญ่ ฟอนต์ 18px รองรับ keyboard wedge (สแกนแล้วส่ง Enter)
+
+| URL | หน้า |
+|-----|------|
+| `/handheld/login` | Login (device type `handheld`, token 30 นาที) |
+| `/handheld` | เมนูหลัก |
+| `/handheld/add-stock` | รับเข้าคลัง (admin, material_prep) |
+| `/handheld/receive-reservation` | รับตาม RES |
+| `/handheld/picklist` | จ่าย Picklist |
+
+จาก Dashboard desktop มีการ์ด **Handheld** ลิงก์ไป `/handheld`
+
+Idle timeout 30 นาที → logout อัตโนมัติ (เหมือน PHP `handheld-idle.js`)
 
 ## Quick Start (สรุปสั้น)
 
@@ -366,6 +426,7 @@ mysql -u root visual_inventory_db < backend/database/migrations/001_additive_pha
 
 # Terminal 1 — API
 cd backend && npm run start:dev
+npm run start:dev
 
 # Terminal 2 — Frontend
 cd frontend && npm run dev

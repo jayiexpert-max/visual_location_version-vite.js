@@ -37,4 +37,6 @@ export type CpkLogicalEndpoint =
   | 'GetPicklistDetail'
   | 'ClosePicklist'
   | 'StationInvenCheck'
+  | 'BookingOutPUID'
+  | 'GET_WOBOMInfo'
   | 'ClearCache';

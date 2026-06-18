@@ -16,6 +16,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   loading?: boolean;
+  html?: boolean;
 }
 
 export function ConfirmDialog({
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   loading,
+  html = false,
 }: ConfirmDialogProps) {
   const { t } = useTranslation('common');
 
@@ -33,7 +35,11 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        <Typography>{message}</Typography>
+        {html ? (
+          <Typography component="div" dangerouslySetInnerHTML={{ __html: message }} />
+        ) : (
+          <Typography>{message}</Typography>
+        )}
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={onCancel} disabled={loading}>

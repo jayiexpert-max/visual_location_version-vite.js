@@ -1,0 +1,11 @@
+RewriteEngine On
+
+# 1. ถ้าเรียก /smart_store หรือ / ให้ส่งไปที่ public/ โดยตรง
+RewriteRule ^$ public/ [L]
+RewriteRule ^((?!public/|api/|handheld(?:/|$)|config/|vendor/|maintenance/|scripts/).*)$ public/$1 [L,NC]
+
+# 2. กฎการเติม .php (ย้ายไปไว้ในโฟลเดอร์ที่เกี่ยวข้องจะดีกว่า แต่ใส่ไว้กันเหนื่อย)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.+)$ $1.php [L,QSA]

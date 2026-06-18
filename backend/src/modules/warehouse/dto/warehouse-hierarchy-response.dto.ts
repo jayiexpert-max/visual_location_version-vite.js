@@ -20,6 +20,13 @@ export class HierarchySlotDto {
 
   @ApiPropertyOptional({ type: HierarchyProductDto })
   product?: HierarchyProductDto | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['ABC123', 'DEF456'],
+    description: 'Active PUIDs in slot (inventory_receive)',
+  })
+  puids?: string[];
 }
 
 export class HierarchyBoxDto {

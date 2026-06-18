@@ -16,12 +16,14 @@ export class ExpirationReportFilterDto extends PaginationDto {
   @IsOptional()
   @IsIn(['all', 'expired', 'soon', 'normal', 'all_stock'])
   status?: 'all' | 'expired' | 'soon' | 'normal' | 'all_stock';
+
+  @ApiPropertyOptional({ description: 'Filter by reservation number' })
+  @IsOptional()
+  @IsString()
+  resNo?: string;
 }
 
 export class ExpirationReportItemDto {
-  @ApiPropertyOptional()
-  id: number;
-
   @ApiPropertyOptional()
   hanaPart: string | null;
 
@@ -29,22 +31,16 @@ export class ExpirationReportItemDto {
   im: string | null;
 
   @ApiPropertyOptional()
-  puid: string | null;
+  puidCount: number;
 
   @ApiPropertyOptional()
-  qtyRemain: number | null;
+  totalQty: number;
+
+  @ApiPropertyOptional()
+  lotsRaw: string | null;
 
   @ApiPropertyOptional()
   expirationDate: Date | null;
-
-  @ApiPropertyOptional()
-  locShelf: string | null;
-
-  @ApiPropertyOptional()
-  locLevel: string | null;
-
-  @ApiPropertyOptional()
-  locBox: string | null;
 
   @ApiPropertyOptional()
   statusText: string;

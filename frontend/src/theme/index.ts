@@ -1,15 +1,15 @@
 import { createTheme, type PaletteMode } from '@mui/material/styles';
 
 const industrialTokens = {
-  primary: '#4f46e5',
-  secondary: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  info: '#3b82f6',
+  primary: '#059669',
+  secondary: '#2563eb',
+  warning: '#d97706',
+  error: '#dc2626',
+  info: '#2563eb',
   surfaceDark: '#1e293b',
   backgroundDark: '#0f172a',
-  surfaceLight: '#f8fafc',
-  backgroundLight: '#e2e8f0',
+  surfaceLight: '#ffffff',
+  backgroundLight: '#ffffff',
 };
 
 export function createAppTheme(mode: PaletteMode) {

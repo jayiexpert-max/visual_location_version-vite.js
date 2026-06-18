@@ -14,6 +14,7 @@ export class MqttConnectionService implements OnModuleInit, OnModuleDestroy {
   private connecting: Promise<void> | null = null;
   private lastConnectedAt: Date | null = null;
   private lastError: string | null = null;
+  private mqttIssueLogged = false;
 
   constructor(private readonly mqttConfig: MqttConfigService) {}
 
@@ -88,11 +89,17 @@ export class MqttConnectionService implements OnModuleInit, OnModuleDestroy {
 
     this.client.on('error', (error) => {
       this.lastError = error.message;
-      this.logger.error(`MQTT connection error: ${error.message}`);
+      if (!this.mqttIssueLogged) {
+        this.mqttIssueLogged = true;
+        this.logger.warn(`MQTT broker unavailable: ${error.message}`);
+      }
     });
 
     this.client.on('reconnect', () => {
-      this.logger.warn('MQTT reconnecting...');
+      if (!this.mqttIssueLogged) {
+        this.mqttIssueLogged = true;
+        this.logger.warn('MQTT broker unavailable, retrying in background...');
+      }
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -104,6 +111,7 @@ export class MqttConnectionService implements OnModuleInit, OnModuleDestroy {
         clearTimeout(timeout);
         this.lastConnectedAt = new Date();
         this.lastError = null;
+        this.mqttIssueLogged = false;
         this.logger.log(`Connected to MQTT broker at ${brokerUrl}`);
         resolve();
       });

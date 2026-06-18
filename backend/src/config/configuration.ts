@@ -15,6 +15,7 @@ export interface DatabaseConfig {
   user: string;
   password: string;
   charset: string;
+  logging: boolean;
 }
 
 export interface JwtConfig {
@@ -52,6 +53,11 @@ export interface MqttConfig {
   highlightDurationSec: number;
 }
 
+export interface IoConfig {
+  raspiIoKey: string;
+  towerOnly: boolean;
+}
+
 export interface TvConfig {
   kioskKey: string;
   allowedIps: string[];
@@ -76,6 +82,7 @@ export interface RootConfig {
   cpk: CpkConfig;
   pdservice: PdserviceConfig;
   mqtt: MqttConfig;
+  io: IoConfig;
   tv: TvConfig;
   redis: RedisConfig;
   security: SecurityConfig;
@@ -118,6 +125,7 @@ export default (): RootConfig => ({
     user: process.env.DB_USER ?? 'root',
     password: process.env.DB_PASS ?? '',
     charset: process.env.DB_CHARSET ?? 'utf8mb4',
+    logging: parseBool(process.env.DB_LOGGING, false),
   },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
@@ -137,7 +145,7 @@ export default (): RootConfig => ({
       'http://194.10.10.15/CPKservice/cpk_service',
     legacyUrl:
       process.env.CPK_SERVICE_LEGACY_URL ??
-      'http://194.10.10.15/CPKservice/cpkservice.svc/rest',
+      'http://194.10.10.15/CPKService/CPKService.svc/rest',
     useLegacyUrl: parseBool(process.env.CPK_USE_LEGACY_URL, false),
     mcId: process.env.CPK_MC_ID ?? '',
     stationKey: process.env.CPK_STATION_KEY ?? '',
@@ -147,7 +155,7 @@ export default (): RootConfig => ({
   pdservice: {
     baseUrl:
       process.env.PDSERVICE_BASE_URL ??
-      'http://194.10.10.89/PDService/Service1.svc/rest',
+      'http://194.10.10.15/cpkservice/cpkservice.svc/rest',
   },
   mqtt: {
     brokerUrl: process.env.MQTT_BROKER_URL ?? 'mqtt://127.0.0.1:1883',
@@ -159,6 +167,10 @@ export default (): RootConfig => ({
       process.env.IO_HIGHLIGHT_DURATION_SEC,
       60,
     ),
+  },
+  io: {
+    raspiIoKey: process.env.RASPI_IO_KEY ?? '',
+    towerOnly: parseBool(process.env.IO_TOWER_ONLY, false),
   },
   tv: {
     kioskKey: process.env.TV_KIOSK_KEY ?? '',

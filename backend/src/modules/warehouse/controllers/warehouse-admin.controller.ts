@@ -7,14 +7,20 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import {
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../../../common/decorators/current-user.decorator';
 import { CreateBoxDto } from '../dto/create-box.dto';
 import { CreateEthernetIoDto } from '../dto/create-ethernet-io.dto';
 import { CreateLevelDto } from '../dto/create-level.dto';
@@ -27,15 +33,20 @@ import { UpdateLevelDto } from '../dto/update-level.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { UpdateRackDto } from '../dto/update-rack.dto';
 import { UpdateSlotDto } from '../dto/update-slot.dto';
+import { UpdateFifoSettingsDto } from '../dto/update-fifo-settings.dto';
+import { AppSettingsService } from '../services/app-settings.service';
 import { IoDeviceService } from '../services/io-device.service';
 import { WarehouseService } from '../services/warehouse.service';
 
 @ApiTags('warehouse-admin')
 @ApiBearerAuth('access-token')
-@Roles('admin')
+@Roles('manage')
 @Controller('warehouse/admin')
 export class WarehouseAdminController {
-  constructor(private readonly warehouseService: WarehouseService) {}
+  constructor(
+    private readonly warehouseService: WarehouseService,
+    private readonly appSettingsService: AppSettingsService,
+  ) {}
 
   // --- Racks ---
 
@@ -195,10 +206,68 @@ export class WarehouseAdminController {
 
   // --- Products ---
 
+  @Get('fifo-settings')
+  @ApiOperation({ summary: 'Get FIFO issue policy settings' })
+  getFifoSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.appSettingsService.getFifoSettings(user.lang === 'en');
+  }
+
+  @Patch('fifo-settings')
+  @ApiOperation({ summary: 'Update FIFO issue policy (password required)' })
+  updateFifoSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateFifoSettingsDto,
+  ) {
+    return this.appSettingsService.updateFifoSettings(
+      user.id,
+      dto.fifoIssueMode,
+      dto.fifoDummyIm,
+      dto.confirmPassword,
+    );
+  }
+
+  @Get('products/box-options')
+  @ApiOperation({ summary: 'List boxes for product mapping filter' })
+  listProductBoxOptions() {
+    return this.warehouseService.findProductBoxOptions();
+  }
+
+  @Get('products/empty-slots')
+  @ApiOperation({ summary: 'List empty slots available for product mapping' })
+  @ApiQuery({ name: 'boxId', required: false, type: Number })
+  @ApiQuery({ name: 'currentSlotId', required: false, type: Number })
+  listEmptyProductSlots(
+    @Query('boxId') boxId?: string,
+    @Query('currentSlotId') currentSlotId?: string,
+  ) {
+    const parsedBoxId = boxId ? parseInt(boxId, 10) : undefined;
+    const parsedSlotId = currentSlotId
+      ? parseInt(currentSlotId, 10)
+      : undefined;
+    return this.warehouseService.findEmptyProductSlots(
+      parsedBoxId && !Number.isNaN(parsedBoxId) ? parsedBoxId : undefined,
+      parsedSlotId && !Number.isNaN(parsedSlotId) ? parsedSlotId : undefined,
+    );
+  }
+
+  @Get('products/next-empty-slot')
+  @ApiOperation({ summary: 'Get next empty slot for sequential mapping' })
+  @ApiQuery({ name: 'boxId', required: false, type: Number })
+  getNextEmptyProductSlot(@Query('boxId') boxId?: string) {
+    const parsed = boxId ? parseInt(boxId, 10) : undefined;
+    return this.warehouseService.findNextEmptyProductSlot(
+      parsed && !Number.isNaN(parsed) ? parsed : undefined,
+    );
+  }
+
   @Get('products')
-  @ApiOperation({ summary: 'List all products' })
-  listProducts() {
-    return this.warehouseService.findAllProducts();
+  @ApiOperation({ summary: 'List products with location info' })
+  @ApiQuery({ name: 'boxId', required: false, type: Number })
+  listProducts(@Query('boxId') boxId?: string) {
+    const parsed = boxId ? parseInt(boxId, 10) : undefined;
+    return this.warehouseService.findProductsAdmin(
+      parsed && !Number.isNaN(parsed) ? parsed : undefined,
+    );
   }
 
   @Get('products/:id')
@@ -235,7 +304,7 @@ export class WarehouseAdminController {
 
 @ApiTags('io-devices')
 @ApiBearerAuth('access-token')
-@Roles('admin')
+@Roles('manage')
 @Controller('io')
 export class IoDevicesAdminController {
   constructor(private readonly ioDeviceService: IoDeviceService) {}

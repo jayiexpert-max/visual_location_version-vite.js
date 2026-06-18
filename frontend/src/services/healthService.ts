@@ -50,8 +50,38 @@ export async function getSystemMetrics(): Promise<Record<string, unknown>> {
   return apiGet('/health/system');
 }
 
-export async function getCpkHealth(): Promise<{ status: string; version?: string }> {
+export interface CpkHealthResult {
+  status: string;
+  latencyMs?: number;
+  message?: string;
+  code?: string;
+  data?: unknown;
+}
+
+export async function getCpkHealth(): Promise<CpkHealthResult> {
   return apiGet('/health/cpk');
+}
+
+export interface CpkEndpointLatency {
+  name: string;
+  method: 'GET' | 'POST';
+  url: string;
+  status: 'reachable' | 'error';
+  latencyMs: number;
+  httpCode: number;
+  cpkStatus?: string | null;
+  message?: string | null;
+}
+
+export interface CpkEndpointHealthResult {
+  status: string;
+  timestamp: string;
+  baseUrl: string;
+  endpoints: CpkEndpointLatency[];
+}
+
+export async function getCpkEndpointHealth(): Promise<CpkEndpointHealthResult> {
+  return apiGet('/health/cpk/endpoints');
 }
 
 export async function getPdserviceHealth(): Promise<{ status: string }> {

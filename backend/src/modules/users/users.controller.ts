@@ -28,7 +28,7 @@ import { UsersService } from './users.service';
 
 @ApiTags('users')
 @ApiBearerAuth('access-token')
-@Roles('admin')
+@Roles('admin', 'manage')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -57,6 +57,7 @@ export class UsersController {
     return this.usersService.create(dto, {
       userId: actor.id,
       username: actor.username,
+      role: actor.role,
     });
   }
 
@@ -71,6 +72,7 @@ export class UsersController {
     return this.usersService.update(id, dto, {
       userId: actor.id,
       username: actor.username,
+      role: actor.role,
     });
   }
 
@@ -84,6 +86,7 @@ export class UsersController {
     await this.usersService.remove(id, {
       userId: actor.id,
       username: actor.username,
+      role: actor.role,
     });
     return { success: true };
   }

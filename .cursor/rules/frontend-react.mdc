@@ -1,0 +1,16 @@
+---
+description: React frontend conventions for Visual Location SPA
+globs: frontend/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend (React)
+
+- Vite + MUI + TanStack Query + react-i18next. API client: `frontend/src/services/apiClient.ts`.
+- Env: `VITE_API_BASE_URL` (must include `/api/v1`), `VITE_SOCKET_URL` for Socket.IO.
+- RBAC: `ProtectedRoute` + `menuConfig.ts` + shared permissions in `frontend/src/shared/rbac/`.
+- Do not import from `backend/` — use local `frontend/src/shared/` copy of types/constants.
+- Pages are lazy-loaded in `AppRouter.tsx`. Admin-only routes under `/app/admin/*`.
+- Export reports via `useExport` hook (Excel, CSV, PDF).
+- Health polling: use `healthService.ts`; do not confuse Socket.IO status with MQTT status.
+- After edits: `cd frontend && npm run build`.

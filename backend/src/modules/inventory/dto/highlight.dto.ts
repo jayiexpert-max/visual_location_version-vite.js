@@ -60,6 +60,9 @@ export class HighlightTvPayloadDto {
   @ApiProperty({ example: 'HANA-12345' })
   productName: string;
 
+  @ApiPropertyOptional({ example: 'ABC123456789' })
+  puid?: string | null;
+
   @ApiProperty({ example: 1 })
   boxId: number;
 

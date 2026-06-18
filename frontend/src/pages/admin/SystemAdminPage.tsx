@@ -1,10 +1,5 @@
-import AddIcon from '@mui/icons-material/Add';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SettingsInputComponentIcon from '@mui/icons-material/SettingsInputComponent';
 import {
   Accordion,
   AccordionDetails,
@@ -12,31 +7,11 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  FormControlLabel,
-  IconButton,
-  InputLabel,
   List,
   ListItemButton,
   ListItemText,
-  MenuItem,
-  Radio,
-  RadioGroup,
-  Select,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
   Typography,
 } from '@mui/material';
-import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, Navigate } from 'react-router-dom';
@@ -46,17 +21,24 @@ import { PageHeader } from '../../components/layout/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { getErrorMessage } from '../../services/apiClient';
 import * as healthService from '../../services/healthService';
+import type { CpkEndpointHealthResult } from '../../services/healthService';
 import * as ioService from '../../services/ioService';
 import * as warehouseService from '../../services/warehouseService';
 import type { EthernetIoDevice, WarehouseHierarchy } from '../../types/warehouse';
+import { formatCpkReleaseDate, parseCpkVersionPayload } from '../../utils/cpkVersionInfo';
+import '../../styles/admin-page.css';
+import { AdminFifoSettingsTab } from './AdminFifoSettingsTab';
+import { AdminProductsTab } from './AdminProductsTab';
 
 type AdminTab =
   | 'locationMapping'
   | 'rackConfig'
+  | 'products'
+  | 'fifoSettings'
+  | 'languageSettings'
+  | 'outputMapping'
   | 'mqttSettings'
   | 'raspberrySettings'
-  | 'outputMapping'
-  | 'languageSettings'
   | 'systemSettings';
 
 type RackEntity = 'racks' | 'levels' | 'boxes' | 'slots';
@@ -114,6 +96,9 @@ interface IoFormState {
   urlFormat: string;
   remark: string;
 }
+
+const RASPI_IO_PORT = '8080';
+const RASPI_IO_URL_FORMAT = 'http://{IP}:{PORT}/api/io/highlight';
 
 const emptyIoForm = (): IoFormState => ({
   name: '',
@@ -182,7 +167,7 @@ function HierarchyTree({
 }
 
 export function SystemAdminPage() {
-  const { t } = useTranslation(['pages', 'common']);
+  const { t, i18n } = useTranslation(['pages', 'common']);
   const { hasRole, user, changeLanguage } = useAuth();
 
   const [tab, setTab] = useState<AdminTab>('locationMapping');
@@ -195,7 +180,6 @@ export function SystemAdminPage() {
   const [rackEntity, setRackEntity] = useState<RackEntity>('racks');
   const [entityRows, setEntityRows] = useState<AdminRecord[]>([]);
   const [entityLoading, setEntityLoading] = useState(false);
-  const [entityDialogOpen, setEntityDialogOpen] = useState(false);
   const [entityForm, setEntityForm] = useState<EntityFormState>(emptyEntityForm());
   const [editingEntity, setEditingEntity] = useState<AdminRecord | null>(null);
   const [entitySaving, setEntitySaving] = useState(false);
@@ -203,7 +187,6 @@ export function SystemAdminPage() {
 
   const [ioDevices, setIoDevices] = useState<EthernetIoDevice[]>([]);
   const [ioLoading, setIoLoading] = useState(false);
-  const [ioDialogOpen, setIoDialogOpen] = useState(false);
   const [ioForm, setIoForm] = useState<IoFormState>(emptyIoForm());
   const [editingIo, setEditingIo] = useState<EthernetIoDevice | null>(null);
   const [ioSaving, setIoSaving] = useState(false);
@@ -213,7 +196,10 @@ export function SystemAdminPage() {
   const [appHealth, setAppHealth] = useState<{ status: string; timestamp?: string; mqttConnected?: boolean } | null>(null);
   const [cpkHealth, setCpkHealth] = useState<{ status: string; version?: string; latencyMs?: number; message?: string; data?: unknown } | null>(null);
   const [pdsHealth, setPdsHealth] = useState<{ status: string; latencyMs?: number; httpCode?: number; message?: string } | null>(null);
+  const [cpkEndpointHealth, setCpkEndpointHealth] = useState<CpkEndpointHealthResult | null>(null);
+  const [cpkEndpointLoading, setCpkEndpointLoading] = useState(false);
   const [ioResetLoading, setIoResetLoading] = useState(false);
+  const [ioTestKey, setIoTestKey] = useState<string | null>(null);
   const [language, setLanguage] = useState<SupportedLanguage>(user?.lang ?? 'th');
   const [languageSaving, setLanguageSaving] = useState(false);
 
@@ -222,7 +208,7 @@ export function SystemAdminPage() {
       const data = await warehouseService.getHierarchy();
       setHierarchy(data);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     }
   }, [t]);
 
@@ -247,7 +233,7 @@ export function SystemAdminPage() {
       }
       setEntityRows((rows as AdminRecord[]).map((row) => ({ ...row, id: row.id })));
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
       setEntityRows([]);
     } finally {
       setEntityLoading(false);
@@ -261,7 +247,7 @@ export function SystemAdminPage() {
       const devices = await warehouseService.listIoDevices();
       setIoDevices(devices);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
       setIoDevices([]);
     } finally {
       setIoLoading(false);
@@ -281,15 +267,29 @@ export function SystemAdminPage() {
       setCpkHealth(cpk as typeof cpkHealth);
       setPdsHealth(pds as typeof pdsHealth);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setHealthLoading(false);
     }
   }, [t]);
 
+  const loadCpkEndpointHealth = useCallback(async () => {
+    setCpkEndpointLoading(true);
+    setError(null);
+    try {
+      const data = await healthService.getCpkEndpointHealth();
+      setCpkEndpointHealth(data);
+    } catch (err) {
+      setError(getErrorMessage(err, t('common:error'), t));
+    } finally {
+      setCpkEndpointLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     void loadHierarchy();
-  }, [loadHierarchy]);
+    void loadIoDevices();
+  }, [loadHierarchy, loadIoDevices]);
 
   useEffect(() => {
     if (tab === 'rackConfig') {
@@ -313,64 +313,125 @@ export function SystemAdminPage() {
     if (user?.lang) setLanguage(user.lang);
   }, [user?.lang]);
 
-  const entityColumns = useMemo((): GridColDef[] => {
+  const cpkVersionInfo = useMemo(
+    () => parseCpkVersionPayload(cpkHealth?.data),
+    [cpkHealth?.data],
+  );
+
+  const cpkVersionText = useMemo(() => {
+    if (!cpkVersionInfo.version) return '—';
+    const formattedDate = cpkVersionInfo.releaseDate
+      ? formatCpkReleaseDate(cpkVersionInfo.releaseDate, i18n.language)
+      : null;
+    if (formattedDate) {
+      return t('pages:cpkVersionWithDate', {
+        version: cpkVersionInfo.version,
+        date: formattedDate,
+      });
+    }
+    return t('pages:cpkVersionOnly', { version: cpkVersionInfo.version });
+  }, [cpkVersionInfo, i18n.language, t]);
+
+  const adminOverview = useMemo(() => {
+    const rackCount = hierarchy?.racks.length ?? 0;
+    const boxCount = hierarchy?.racks.reduce(
+      (total, rack) => total + rack.levels.reduce((levelTotal, level) => levelTotal + level.boxes.length, 0),
+      0,
+    ) ?? 0;
+    const slotCount = hierarchy?.racks.reduce(
+      (total, rack) => total + rack.levels.reduce(
+        (levelTotal, level) => levelTotal + level.boxes.reduce((boxTotal, box) => boxTotal + box.slots.length, 0),
+        0,
+      ),
+      0,
+    ) ?? 0;
+    const raspiCount = ioDevices.filter((device) => device.controllerType === 'raspi').length;
+    return { rackCount, boxCount, slotCount, ioCount: ioDevices.length, raspiCount };
+  }, [hierarchy, ioDevices]);
+
+  const rackOptions = useMemo(() => hierarchy?.racks ?? [], [hierarchy]);
+
+  const levelOptions = useMemo(() => (
+    hierarchy?.racks.flatMap((rack) => rack.levels.map((level) => ({
+      id: level.id,
+      rackId: rack.id,
+      rackName: rack.name,
+      levelNo: level.levelNo,
+      label: `Rack ${rack.name} - Level ${level.levelNo}`,
+    }))) ?? []
+  ), [hierarchy]);
+
+  const boxOptions = useMemo(() => (
+    hierarchy?.racks.flatMap((rack) => rack.levels.flatMap((level) => level.boxes.map((box) => ({
+      id: box.id,
+      rackName: rack.name,
+      levelNo: level.levelNo,
+      boxCode: box.boxCode,
+      layout: box.layout,
+      occupied: box.slots.filter((slot) => slot.product).length,
+      total: box.slots.length,
+      label: `Rack ${rack.name} - L${level.levelNo} - Box ${box.boxCode}`,
+    })))) ?? []
+  ), [hierarchy]);
+
+  const ioDeviceById = useMemo(() => {
+    const map = new Map<number, EthernetIoDevice>();
+    ioDevices.forEach((device) => map.set(device.id, device));
+    return map;
+  }, [ioDevices]);
+
+  const rackById = useMemo(() => {
+    const map = new Map<number, { name: string }>();
+    rackOptions.forEach((rack) => map.set(rack.id, rack));
+    return map;
+  }, [rackOptions]);
+
+  const levelById = useMemo(() => {
+    const map = new Map<number, (typeof levelOptions)[number]>();
+    levelOptions.forEach((level) => map.set(level.id, level));
+    return map;
+  }, [levelOptions]);
+
+  const boxById = useMemo(() => {
+    const map = new Map<number, (typeof boxOptions)[number]>();
+    boxOptions.forEach((box) => map.set(box.id, box));
+    return map;
+  }, [boxOptions]);
+
+  const entityColumns = useMemo(() => {
     switch (rackEntity) {
       case 'racks':
         return [
-          { field: 'id', headerName: 'ID', width: 70 },
-          { field: 'name', headerName: 'Name', flex: 1, minWidth: 120 },
-          { field: 'locationDesc', headerName: 'Location', flex: 1, minWidth: 160 },
-          { field: 'ioDeviceId', headerName: 'IO Device', width: 100 },
+          { field: 'id', headerName: 'ID' },
+          { field: 'name', headerName: 'Name' },
+          { field: 'locationDesc', headerName: 'Location' },
+          { field: 'ioConfig', headerName: 'IO Config' },
         ];
       case 'levels':
         return [
-          { field: 'id', headerName: 'ID', width: 70 },
-          { field: 'rackId', headerName: 'Rack ID', width: 100 },
-          { field: 'levelNo', headerName: 'Level No', width: 100 },
-          { field: 'remark', headerName: 'Remark', flex: 1, minWidth: 160 },
+          { field: 'id', headerName: 'ID' },
+          { field: 'rackId', headerName: 'Rack ID' },
+          { field: 'levelNo', headerName: 'Level No' },
+          { field: 'remark', headerName: 'Remark' },
         ];
       case 'boxes':
         return [
-          { field: 'id', headerName: 'ID', width: 70 },
-          { field: 'levelId', headerName: 'Level ID', width: 100 },
-          { field: 'boxCode', headerName: 'Box Code', width: 120 },
-          { field: 'layout', headerName: 'Layout', width: 90 },
-          { field: 'positionInLevel', headerName: 'Position', width: 100 },
-          { field: 'ioOutputPin', headerName: 'IO Pin', width: 90 },
+          { field: 'id', headerName: 'ID' },
+          { field: 'levelId', headerName: 'Level ID' },
+          { field: 'boxCode', headerName: 'Box Code' },
+          { field: 'layout', headerName: 'Layout' },
+          { field: 'positionInLevel', headerName: 'Position' },
+          { field: 'ioOutputPin', headerName: 'IO Pin' },
         ];
       case 'slots':
         return [
-          { field: 'id', headerName: 'ID', width: 70 },
-          { field: 'boxId', headerName: 'Box ID', width: 100 },
-          { field: 'slotNo', headerName: 'Slot No', width: 100 },
-          { field: 'remark', headerName: 'Remark', flex: 1, minWidth: 160 },
+          { field: 'id', headerName: 'ID' },
+          { field: 'boxId', headerName: 'Box ID' },
+          { field: 'slotNo', headerName: 'Slot No' },
+          { field: 'remark', headerName: 'Remark' },
         ];
     }
   }, [rackEntity]);
-
-  const entityActionColumn: GridColDef = {
-    field: 'actions',
-    headerName: t('common:actions'),
-    width: 120,
-    sortable: false,
-    filterable: false,
-    renderCell: ({ row }) => (
-      <Stack direction="row" spacing={0.5}>
-        <IconButton size="small" onClick={() => openEntityEdit(row as AdminRecord)}>
-          <EditIcon fontSize="small" />
-        </IconButton>
-        <IconButton size="small" color="error" onClick={() => setEntityDeleteTarget(row as AdminRecord)}>
-          <DeleteIcon fontSize="small" />
-        </IconButton>
-      </Stack>
-    ),
-  };
-
-  const openEntityCreate = () => {
-    setEditingEntity(null);
-    setEntityForm(emptyEntityForm());
-    setEntityDialogOpen(true);
-  };
 
   const openEntityEdit = (row: AdminRecord) => {
     setEditingEntity(row);
@@ -394,7 +455,93 @@ export function SystemAdminPage() {
       ioBuzzerPin: String(row.ioBuzzerPin ?? ''),
       ioOutputPin: String(row.ioOutputPin ?? ''),
     });
-    setEntityDialogOpen(true);
+  };
+
+  const applyRaspiPreset = () => {
+    setIoForm((current) => ({
+      ...current,
+      name: current.name || 'Raspi IO Gateway',
+      port: RASPI_IO_PORT,
+      controllerType: 'raspi',
+      urlFormat: RASPI_IO_URL_FORMAT,
+    }));
+    setTab('outputMapping');
+  };
+
+  const renderEntityCell = (row: AdminRecord, field: string) => {
+    if (field === 'rackId') {
+      const rack = rackById.get(Number(row.rackId));
+      return rack ? `Rack ${rack.name}` : String(row.rackId ?? '—');
+    }
+    if (field === 'levelId') {
+      const level = levelById.get(Number(row.levelId));
+      return level ? level.label : String(row.levelId ?? '—');
+    }
+    if (field === 'boxId') {
+      const box = boxById.get(Number(row.boxId));
+      return box ? box.label : String(row.boxId ?? '—');
+    }
+    if (field === 'ioDeviceId') {
+      const device = ioDeviceById.get(Number(row.ioDeviceId));
+      return device ? `${device.name} (#${device.id})` : String(row.ioDeviceId ?? '—');
+    }
+    if (field === 'ioConfig') {
+      const deviceId = Number(row.ioDeviceId ?? 0);
+      const device = ioDeviceById.get(deviceId);
+      if (!device) return '—';
+      const pins = [
+        { label: 'Green', role: 'green', value: Number(row.ioGreenPin ?? 0) },
+        { label: 'Red', role: 'red', value: Number(row.ioRedPin ?? 0) },
+        { label: 'Buzzer', role: 'buzzer', value: Number(row.ioBuzzerPin ?? 0) },
+      ].filter((pin) => pin.value > 0);
+      return (
+        <div className="admin-test-group">
+          <span className="admin-soft-badge">{device.name}</span>
+          {pins.length === 0 ? (
+            <span style={{ color: '#94a3b8' }}>No pin</span>
+          ) : pins.map((pin) => {
+            const key = `${deviceId}:${pin.value}:${pin.role}`;
+            return (
+              <button
+                key={key}
+                type="button"
+                className="admin-test-btn"
+                disabled={ioTestKey === key}
+                onClick={() => void handleIoTestOutput(deviceId, pin.value, pin.role)}
+              >
+                {ioTestKey === key ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-bolt"></i>}
+                {pin.label} {pin.value}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+    if (field === 'ioOutputPin' && row.ioOutputPin) {
+      const deviceId = Number(row.ioDeviceId ?? 0);
+      const pin = Number(row.ioOutputPin ?? 0);
+      const key = `${deviceId}:${pin}:box`;
+      return (
+        <div className="admin-test-group">
+          <span className="admin-soft-badge admin-soft-badge-green">Pin {String(row.ioOutputPin)}</span>
+          {deviceId > 0 && pin > 0 && (
+            <button
+              type="button"
+              className="admin-test-btn"
+              disabled={ioTestKey === key}
+              onClick={() => void handleIoTestOutput(deviceId, pin, 'box')}
+            >
+              {ioTestKey === key ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-bolt"></i>}
+              Test
+            </button>
+          )}
+        </div>
+      );
+    }
+    if (field === 'layout' && row.layout) {
+      return <span className="admin-soft-badge">{String(row.layout)}</span>;
+    }
+    return String(row[field] ?? '—');
   };
 
   const saveEntity = async () => {
@@ -474,12 +621,13 @@ export function SystemAdminPage() {
         }
       }
 
-      setEntityDialogOpen(false);
+      setEditingEntity(null);
+      setEntityForm(emptyEntityForm());
       setSuccess(t('common:success'));
       await loadEntityRows();
       await loadHierarchy();
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setEntitySaving(false);
     }
@@ -508,29 +656,10 @@ export function SystemAdminPage() {
       await loadEntityRows();
       await loadHierarchy();
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setEntitySaving(false);
     }
-  };
-
-  const openIoCreate = () => {
-    setEditingIo(null);
-    setIoForm(emptyIoForm());
-    setIoDialogOpen(true);
-  };
-
-  const openIoEdit = (device: EthernetIoDevice) => {
-    setEditingIo(device);
-    setIoForm({
-      name: device.name,
-      ipAddress: device.ipAddress,
-      port: String(device.port),
-      controllerType: device.controllerType,
-      urlFormat: device.urlFormat,
-      remark: device.remark ?? '',
-    });
-    setIoDialogOpen(true);
   };
 
   const saveIo = async () => {
@@ -552,11 +681,12 @@ export function SystemAdminPage() {
         await warehouseService.createIoDevice(payload);
       }
 
-      setIoDialogOpen(false);
+      setEditingIo(null);
+      setIoForm(emptyIoForm());
       setSuccess(t('common:success'));
       await loadIoDevices();
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setIoSaving(false);
     }
@@ -571,7 +701,7 @@ export function SystemAdminPage() {
       setSuccess(t('common:success'));
       await loadIoDevices();
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setIoSaving(false);
     }
@@ -584,9 +714,23 @@ export function SystemAdminPage() {
       await ioService.ioReset();
       setSuccess(t('common:success'));
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setIoResetLoading(false);
+    }
+  };
+
+  const handleIoTestOutput = async (deviceId: number, pin: number, role: string) => {
+    const key = `${deviceId}:${pin}:${role}`;
+    setIoTestKey(key);
+    setError(null);
+    try {
+      await ioService.ioTestOutput({ deviceId, pin, role });
+      setSuccess(`Test output sent: device ${deviceId}, pin ${pin}`);
+    } catch (err) {
+      setError(getErrorMessage(err, t('common:error'), t));
+    } finally {
+      setIoTestKey(null);
     }
   };
 
@@ -597,45 +741,10 @@ export function SystemAdminPage() {
       await changeLanguage(language);
       setSuccess(t('common:success'));
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setLanguageSaving(false);
     }
-  };
-
-  const ioColumns: GridColDef<EthernetIoDevice>[] = [
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
-    { field: 'ipAddress', headerName: 'IP Address', width: 140 },
-    { field: 'port', headerName: 'Port', width: 90 },
-    { field: 'controllerType', headerName: 'Controller', width: 120 },
-    { field: 'urlFormat', headerName: 'URL Format', flex: 1.5, minWidth: 220 },
-    {
-      field: 'actions',
-      headerName: t('common:actions'),
-      width: 120,
-      sortable: false,
-      filterable: false,
-      renderCell: ({ row }) => (
-        <Stack direction="row" spacing={0.5}>
-          <IconButton size="small" onClick={() => openIoEdit(row)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" color="error" onClick={() => setIoDeleteTarget(row)}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Stack>
-      ),
-    },
-  ];
-
-  const tabLabels: Record<AdminTab, string> = {
-    locationMapping: t('pages:locationMapping'),
-    rackConfig: t('pages:rackConfig'),
-    mqttSettings: t('pages:mqttSettings'),
-    raspberrySettings: t('pages:raspberrySettings'),
-    outputMapping: t('pages:outputMapping'),
-    languageSettings: t('pages:languageSettings'),
-    systemSettings: t('pages:systemSettings'),
   };
 
   const mqttEnvItems = [
@@ -647,61 +756,7 @@ export function SystemAdminPage() {
     { label: 'MQTT Topic Prefix (server-side)', value: 'Configured via MQTT_IO_TOPIC_PREFIX on API server' },
   ];
 
-  const renderEntityFields = () => {
-    switch (rackEntity) {
-      case 'racks':
-        return (
-          <>
-            <TextField label="Name" value={entityForm.name} onChange={(e) => setEntityForm((p) => ({ ...p, name: e.target.value }))} fullWidth />
-            <TextField label="Location Description" value={entityForm.locationDesc} onChange={(e) => setEntityForm((p) => ({ ...p, locationDesc: e.target.value }))} fullWidth />
-            <TextField label="Remark" value={entityForm.remark} onChange={(e) => setEntityForm((p) => ({ ...p, remark: e.target.value }))} fullWidth />
-            <Stack direction="row" spacing={2}>
-              <TextField label="IO Device ID" value={entityForm.ioDeviceId} onChange={(e) => setEntityForm((p) => ({ ...p, ioDeviceId: e.target.value }))} fullWidth />
-              <TextField label="Red Pin" value={entityForm.ioRedPin} onChange={(e) => setEntityForm((p) => ({ ...p, ioRedPin: e.target.value }))} fullWidth />
-            </Stack>
-            <Stack direction="row" spacing={2}>
-              <TextField label="Yellow Pin" value={entityForm.ioYellowPin} onChange={(e) => setEntityForm((p) => ({ ...p, ioYellowPin: e.target.value }))} fullWidth />
-              <TextField label="Green Pin" value={entityForm.ioGreenPin} onChange={(e) => setEntityForm((p) => ({ ...p, ioGreenPin: e.target.value }))} fullWidth />
-              <TextField label="Buzzer Pin" value={entityForm.ioBuzzerPin} onChange={(e) => setEntityForm((p) => ({ ...p, ioBuzzerPin: e.target.value }))} fullWidth />
-            </Stack>
-          </>
-        );
-      case 'levels':
-        return (
-          <>
-            <TextField label="Rack ID" value={entityForm.rackId} onChange={(e) => setEntityForm((p) => ({ ...p, rackId: e.target.value }))} required fullWidth />
-            <TextField label="Level No" value={entityForm.levelNo} onChange={(e) => setEntityForm((p) => ({ ...p, levelNo: e.target.value }))} required fullWidth />
-            <TextField label="Remark" value={entityForm.remark} onChange={(e) => setEntityForm((p) => ({ ...p, remark: e.target.value }))} fullWidth />
-          </>
-        );
-      case 'boxes':
-        return (
-          <>
-            <TextField label="Level ID" value={entityForm.levelId} onChange={(e) => setEntityForm((p) => ({ ...p, levelId: e.target.value }))} required fullWidth />
-            <Stack direction="row" spacing={2}>
-              <TextField label="Box Code" value={entityForm.boxCode} onChange={(e) => setEntityForm((p) => ({ ...p, boxCode: e.target.value }))} fullWidth />
-              <TextField label="Layout (NxM)" value={entityForm.layout} onChange={(e) => setEntityForm((p) => ({ ...p, layout: e.target.value }))} fullWidth />
-              <TextField label="Position" value={entityForm.positionInLevel} onChange={(e) => setEntityForm((p) => ({ ...p, positionInLevel: e.target.value }))} fullWidth />
-            </Stack>
-            <Stack direction="row" spacing={2}>
-              <TextField label="IO Device ID" value={entityForm.ioDeviceId} onChange={(e) => setEntityForm((p) => ({ ...p, ioDeviceId: e.target.value }))} fullWidth />
-              <TextField label="IO Output Pin" value={entityForm.ioOutputPin} onChange={(e) => setEntityForm((p) => ({ ...p, ioOutputPin: e.target.value }))} fullWidth />
-            </Stack>
-            <TextField label="Remark" value={entityForm.remark} onChange={(e) => setEntityForm((p) => ({ ...p, remark: e.target.value }))} fullWidth />
-          </>
-        );
-      case 'slots':
-        return (
-          <>
-            <TextField label="Box ID" value={entityForm.boxId} onChange={(e) => setEntityForm((p) => ({ ...p, boxId: e.target.value }))} required fullWidth />
-            <TextField label="Slot No" value={entityForm.slotNo} onChange={(e) => setEntityForm((p) => ({ ...p, slotNo: e.target.value }))} required fullWidth />
-            <TextField label="Remark" value={entityForm.remark} onChange={(e) => setEntityForm((p) => ({ ...p, remark: e.target.value }))} fullWidth />
-          </>
-        );
-    }
-  };
-
-  if (!hasRole('admin')) {
+  if (!hasRole('manage')) {
     return <Navigate to="/app" replace />;
   }
 
@@ -720,273 +775,677 @@ export function SystemAdminPage() {
         </Alert>
       )}
 
-      <Tabs
-        value={tab}
-        onChange={(_, value: AdminTab) => setTab(value)}
-        variant="scrollable"
-        scrollButtons="auto"
-        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
-      >
-        {(Object.keys(tabLabels) as AdminTab[]).map((key) => (
-          <Tab key={key} label={tabLabels[key]} value={key} />
-        ))}
-      </Tabs>
+      <div className="admin-overview">
+        <button type="button" className="admin-overview-item" onClick={() => setTab('outputMapping')}>
+          <span className="admin-overview-icon"><i className="fas fa-network-wired"></i></span>
+          <span>
+            <strong>ตั้งค่า IO / Raspi</strong>
+            <small>{adminOverview.raspiCount} Raspi gateway จาก {adminOverview.ioCount} IO device</small>
+          </span>
+        </button>
+        <button type="button" className="admin-overview-item" onClick={() => setTab('rackConfig')}>
+          <span className="admin-overview-icon"><i className="fas fa-layer-group"></i></span>
+          <span>
+            <strong>Rack และ Box</strong>
+            <small>{adminOverview.rackCount} racks · {adminOverview.boxCount} boxes · {adminOverview.slotCount} slots</small>
+          </span>
+        </button>
+        <button type="button" className="admin-overview-item" onClick={() => setTab('systemSettings')}>
+          <span className="admin-overview-icon"><i className="fas fa-heartbeat"></i></span>
+          <span>
+            <strong>เช็ค Service</strong>
+            <small>CPK, PDService และ latency แยก endpoint</small>
+          </span>
+        </button>
+        <Button component={RouterLink} to="/app/admin/iot" variant="outlined" className="admin-overview-link">
+          <i className="fas fa-chart-line"></i> IoT Monitor
+        </Button>
+      </div>
+
+      <div className="admin-layout">
+        {/* Sidebar */}
+        <div className="admin-sidebar">
+          <div className="admin-nav-group">
+            <div className="admin-nav-title">{t('pages:adminNavWarehouse')}</div>
+            <button className={`admin-nav-item ${tab === 'locationMapping' ? 'active' : ''}`} onClick={() => setTab('locationMapping')}>
+              <i className="fas fa-sitemap"></i> {t('pages:locationMapping')}
+            </button>
+            <button className={`admin-nav-item ${tab === 'rackConfig' ? 'active' : ''}`} onClick={() => setTab('rackConfig')}>
+              <i className="fas fa-layer-group"></i> {t('pages:rackConfig')}
+            </button>
+            <button className={`admin-nav-item ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>
+              <i className="fas fa-box-open"></i> {t('pages:productMappingTitle')}
+            </button>
+          </div>
+
+          <div className="admin-nav-group">
+            <div className="admin-nav-title">{t('pages:adminNavSystem')}</div>
+            <button className={`admin-nav-item ${tab === 'fifoSettings' ? 'active' : ''}`} onClick={() => setTab('fifoSettings')}>
+              <i className="fas fa-sort-amount-down"></i> {t('pages:fifoSettingsTitle')}
+            </button>
+            <button className={`admin-nav-item ${tab === 'languageSettings' ? 'active' : ''}`} onClick={() => setTab('languageSettings')}>
+              <i className="fas fa-language"></i> {t('pages:adminLanguageLocale')}
+            </button>
+          </div>
+
+          <div className="admin-nav-group">
+            <div className="admin-nav-title">{t('pages:adminNavIot')}</div>
+            <button className={`admin-nav-item ${tab === 'outputMapping' ? 'active' : ''}`} onClick={() => setTab('outputMapping')}>
+              <i className="fas fa-network-wired"></i> {t('pages:outputMapping')}
+            </button>
+            <button className={`admin-nav-item ${tab === 'mqttSettings' ? 'active' : ''}`} onClick={() => setTab('mqttSettings')}>
+              <i className="fas fa-wifi"></i> {t('pages:mqttSettings')}
+            </button>
+          </div>
+
+          <div className="admin-nav-group">
+            <div className="admin-nav-title">{t('pages:adminNavMaintenance')}</div>
+            <button className={`admin-nav-item ${tab === 'raspberrySettings' ? 'active' : ''}`} onClick={() => setTab('raspberrySettings')}>
+              <i className="fab fa-raspberry-pi"></i> {t('pages:raspberrySettings')}
+            </button>
+            <button className={`admin-nav-item ${tab === 'systemSettings' ? 'active' : ''}`} onClick={() => setTab('systemSettings')}>
+              <i className="fas fa-heartbeat"></i> {t('pages:systemSettings')}
+            </button>
+          </div>
+        </div>
+
+        {/* Content Area */}
+        <div className="admin-content">
 
       {tab === 'locationMapping' && (
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-            <Typography variant="body1" color="text.secondary">
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-sitemap"></i> Location Mapping</h3>
+            <button className="fx-btn fx-btn-secondary" onClick={() => void loadHierarchy()}>
+              <i className="fas fa-sync-alt"></i>
+            </button>
+          </div>
+          <div className="admin-card-body">
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
               Browse warehouse hierarchy. Select a box to jump to rack configuration.
             </Typography>
-            <Button variant="outlined" onClick={() => setTab('rackConfig')}>
-              {t('pages:rackConfig')}
-            </Button>
-            <Button startIcon={<RefreshIcon />} onClick={() => void loadHierarchy()}>
-              {t('common:refresh')}
-            </Button>
-          </Stack>
-          {selectedBoxLabel && (
-            <Alert severity="info">
-              Selected: {selectedBoxLabel}. Open Rack Configuration to edit boxes and slots.
-            </Alert>
-          )}
-          {hierarchy ? (
-            <HierarchyTree
-              hierarchy={hierarchy}
-              onSelectBox={(_boxId, label) => {
-                setSelectedBoxLabel(label);
-                setTab('rackConfig');
-                setRackEntity('boxes');
-              }}
-            />
-          ) : (
-            <Typography color="text.secondary">{t('common:loading')}</Typography>
-          )}
-        </Stack>
+            {selectedBoxLabel && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Selected: {selectedBoxLabel}. Open Rack Configuration to edit boxes and slots.
+              </Alert>
+            )}
+            {hierarchy ? (
+              <HierarchyTree
+                hierarchy={hierarchy}
+                onSelectBox={(_boxId, label) => {
+                  setSelectedBoxLabel(label);
+                  setTab('rackConfig');
+                  setRackEntity('boxes');
+                }}
+              />
+            ) : (
+              <Typography color="text.secondary">{t('common:loading')}</Typography>
+            )}
+          </div>
+        </div>
       )}
 
       {tab === 'rackConfig' && (
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <InputLabel>Entity</InputLabel>
-              <Select label="Entity" value={rackEntity} onChange={(e) => setRackEntity(e.target.value as RackEntity)}>
-                <MenuItem value="racks">Racks</MenuItem>
-                <MenuItem value="levels">Levels</MenuItem>
-                <MenuItem value="boxes">Boxes</MenuItem>
-                <MenuItem value="slots">Slots</MenuItem>
-              </Select>
-            </FormControl>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openEntityCreate}>
-              {t('common:create')}
-            </Button>
-            <Button startIcon={<RefreshIcon />} onClick={() => void loadEntityRows()}>
-              {t('common:refresh')}
-            </Button>
-          </Stack>
-          <DataGrid
-            autoHeight
-            rows={entityRows}
-            columns={[...entityColumns, entityActionColumn]}
-            loading={entityLoading}
-            disableRowSelectionOnClick
-            pageSizeOptions={[10, 20, 50]}
-            initialState={{ pagination: { paginationModel: { pageSize: 20 } } }}
-            sx={{ bgcolor: 'background.paper', borderRadius: 2 }}
-          />
-        </Stack>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-layer-group"></i> Rack Configuration</h3>
+            <div className="admin-actions">
+              <button className="fx-btn fx-btn-secondary" onClick={() => void loadEntityRows()}>
+                <i className="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div className="admin-card-body">
+            <div className="admin-entity-switcher">
+              {([
+                ['racks', 'Racks', 'โซน/ชั้นวางหลัก', 'fas fa-layer-group'],
+                ['levels', 'Levels', 'ชั้นในแต่ละ Rack', 'fas fa-align-justify'],
+                ['boxes', 'Boxes', 'กล่องและ output pin', 'fas fa-box'],
+                ['slots', 'Slots', 'ช่องย่อยในกล่อง', 'fas fa-th'],
+              ] as const).map(([value, title, desc, icon]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`admin-entity-tab ${rackEntity === value ? 'active' : ''}`}
+                  onClick={() => {
+                    setRackEntity(value);
+                    setEditingEntity(null);
+                    setEntityForm(emptyEntityForm());
+                  }}
+                >
+                  <i className={icon}></i>
+                  <span>
+                    <strong>{title}</strong>
+                    <small>{desc}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="admin-helper-panel admin-helper-panel-neutral">
+              <div>
+                <div className="admin-helper-title">
+                  <i className="fas fa-map-marked-alt"></i>
+                  ตั้งค่าแบบ PHP: Rack → Level → Box → Slot
+                </div>
+                <ol className="admin-step-list">
+                  <li>สร้าง Rack ก่อน แล้วเพิ่ม Level ใต้ Rack นั้น</li>
+                  <li>สร้าง Box โดยเลือก Location เป็น Rack + Level ไม่ต้องจำเลข ID</li>
+                  <li>ถ้า Box ต่อไฟ ให้เลือก IO Device และใส่ Output Pin ที่ต่อจริง</li>
+                </ol>
+              </div>
+              <div className="admin-helper-actions">
+                <button type="button" className="fx-btn fx-btn-secondary" onClick={() => setTab('outputMapping')}>
+                  <i className="fas fa-network-wired"></i> ตั้งค่า IO Device
+                </button>
+              </div>
+            </div>
+            
+            {/* Inline Form */}
+            <form className="admin-form-inline" onSubmit={(e) => { e.preventDefault(); void saveEntity(); }}>
+              <div className="admin-form-heading">
+                <strong>{editingEntity ? `แก้ไข ${rackEntity}` : `เพิ่ม ${rackEntity}`}</strong>
+                <small>เลือกจากชื่อ Rack/Level/Box ได้เลย เพื่อลดการกรอก ID ผิด</small>
+              </div>
+              {rackEntity === 'racks' && (
+                <>
+                  <div className="admin-field"><label>Name *</label><input required value={entityForm.name} onChange={e => setEntityForm(p => ({ ...p, name: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Location Desc</label><input value={entityForm.locationDesc} onChange={e => setEntityForm(p => ({ ...p, locationDesc: e.target.value }))} /></div>
+                  <div className="admin-field"><label>IO Device (Tower Light)</label>
+                    <select value={entityForm.ioDeviceId} onChange={e => setEntityForm(p => ({ ...p, ioDeviceId: e.target.value }))}>
+                      <option value="">-- None --</option>
+                      {ioDevices.map((device) => (
+                        <option key={device.id} value={device.id}>{device.name} ({device.controllerType})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-field"><label>Red Pin</label><input type="number" value={entityForm.ioRedPin} onChange={e => setEntityForm(p => ({ ...p, ioRedPin: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Yellow Pin</label><input type="number" value={entityForm.ioYellowPin} onChange={e => setEntityForm(p => ({ ...p, ioYellowPin: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Green Pin</label><input type="number" value={entityForm.ioGreenPin} onChange={e => setEntityForm(p => ({ ...p, ioGreenPin: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Buzzer Pin</label><input type="number" value={entityForm.ioBuzzerPin} onChange={e => setEntityForm(p => ({ ...p, ioBuzzerPin: e.target.value }))} /></div>
+                </>
+              )}
+              {rackEntity === 'levels' && (
+                <>
+                  <div className="admin-field"><label>Select Rack *</label>
+                    <select required value={entityForm.rackId} onChange={e => setEntityForm(p => ({ ...p, rackId: e.target.value }))}>
+                      <option value="">-- Choose Rack --</option>
+                      {rackOptions.map((rack) => (
+                        <option key={rack.id} value={rack.id}>Rack {rack.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-field"><label>Level No *</label><input type="number" required value={entityForm.levelNo} onChange={e => setEntityForm(p => ({ ...p, levelNo: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Remark</label><input value={entityForm.remark} onChange={e => setEntityForm(p => ({ ...p, remark: e.target.value }))} /></div>
+                </>
+              )}
+              {rackEntity === 'boxes' && (
+                <>
+                  <div className="admin-field" style={{ minWidth: '260px' }}><label>Location (Level) *</label>
+                    <select required value={entityForm.levelId} onChange={e => setEntityForm(p => ({ ...p, levelId: e.target.value }))}>
+                      <option value="">-- Choose Level --</option>
+                      {levelOptions.map((level) => (
+                        <option key={level.id} value={level.id}>{level.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-field"><label>Box Code *</label><input required value={entityForm.boxCode} onChange={e => setEntityForm(p => ({ ...p, boxCode: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Position</label><input type="number" value={entityForm.positionInLevel} onChange={e => setEntityForm(p => ({ ...p, positionInLevel: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Layout (W x H)</label>
+                    <select value={entityForm.layout} onChange={e => setEntityForm(p => ({ ...p, layout: e.target.value }))}>
+                      <option value="1x1">1 x 1</option>
+                      <option value="2x5">2 x 5</option>
+                      <option value="3x5">3 x 5</option>
+                      <option value="4x5">4 x 5</option>
+                      <option value="5x5">5 x 5</option>
+                    </select>
+                    <small className="admin-field-hint">ใช้รูปแบบ WxH เช่น 2x5 ตาม PHP</small>
+                  </div>
+                  <div className="admin-field"><label>IO Device</label>
+                    <select value={entityForm.ioDeviceId} onChange={e => setEntityForm(p => ({ ...p, ioDeviceId: e.target.value }))}>
+                      <option value="">-- None --</option>
+                      {ioDevices.map((device) => (
+                        <option key={device.id} value={device.id}>{device.name} ({device.controllerType})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-field"><label>Output Pin</label><input type="number" value={entityForm.ioOutputPin} onChange={e => setEntityForm(p => ({ ...p, ioOutputPin: e.target.value }))} /></div>
+                </>
+              )}
+              {rackEntity === 'slots' && (
+                <>
+                  <div className="admin-field" style={{ minWidth: '280px' }}><label>Select Box *</label>
+                    <select required value={entityForm.boxId} onChange={e => setEntityForm(p => ({ ...p, boxId: e.target.value }))}>
+                      <option value="">-- Choose Box --</option>
+                      {boxOptions.map((box) => (
+                        <option key={box.id} value={box.id}>
+                          {box.label} ({box.occupied}/{box.total} · {box.layout})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-field"><label>Slot No *</label><input type="number" required value={entityForm.slotNo} onChange={e => setEntityForm(p => ({ ...p, slotNo: e.target.value }))} /></div>
+                  <div className="admin-field"><label>Remark</label><input value={entityForm.remark} onChange={e => setEntityForm(p => ({ ...p, remark: e.target.value }))} /></div>
+                </>
+              )}
+              <div className="admin-actions" style={{ marginLeft: 'auto' }}>
+                {editingEntity && (
+                  <button type="button" className="fx-btn fx-btn-secondary" onClick={() => { setEditingEntity(null); setEntityForm(emptyEntityForm()); }}>
+                    Cancel
+                  </button>
+                )}
+                <button type="submit" className="fx-btn fx-btn-accent" disabled={entitySaving}>
+                  {entitySaving ? <i className="fas fa-spinner fa-spin"></i> : (editingEntity ? <i className="fas fa-save"></i> : <i className="fas fa-plus"></i>)}
+                  {editingEntity ? ' Update' : ' Add'}
+                </button>
+              </div>
+            </form>
+
+            {/* Custom Table */}
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }}>ID</th>
+                    {entityColumns.filter(c => c.field !== 'id' && c.field !== 'actions').map(c => (
+                      <th key={c.field}>{c.headerName}</th>
+                    ))}
+                    <th style={{ width: 100, textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entityLoading ? (
+                    <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}><i className="fas fa-circle-notch fa-spin"></i> Loading...</td></tr>
+                  ) : entityRows.length === 0 ? (
+                    <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>No {rackEntity} found.</td></tr>
+                  ) : entityRows.map(row => (
+                    <tr key={row.id}>
+                      <td style={{ color: '#94a3b8', fontWeight: 600 }}>{row.id}</td>
+                      {entityColumns.filter(c => c.field !== 'id' && c.field !== 'actions').map(c => (
+                        <td key={c.field}>{renderEntityCell(row, c.field)}</td>
+                      ))}
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="admin-actions" style={{ justifyContent: 'flex-end' }}>
+                          <button className="btn-icon edit" onClick={() => openEntityEdit(row)} title="Edit">
+                            <i className="fas fa-edit"></i>
+                          </button>
+                          <button className="btn-icon delete" onClick={() => setEntityDeleteTarget(row)} title="Delete">
+                            <i className="fas fa-trash-alt"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {tab === 'products' && (
+        <AdminProductsTab
+          onSuccess={(msg) => setSuccess(msg)}
+          onError={(msg) => setError(msg)}
+        />
+      )}
+
+      {tab === 'fifoSettings' && (
+        <AdminFifoSettingsTab
+          onSuccess={(msg) => setSuccess(msg)}
+          onError={(msg) => setError(msg)}
+        />
       )}
 
       {tab === 'mqttSettings' && (
-        <Stack spacing={2}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                {t('pages:mqttSettings')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                MQTT broker credentials are configured on the API server environment. The web app connects through REST and Socket.IO.
-              </Typography>
-              <Stack spacing={1.5}>
-                {mqttEnvItems.map((item) => (
-                  <Stack key={item.label} direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                    <Typography sx={{ minWidth: 240 }} fontWeight={600}>
-                      {item.label}
-                    </Typography>
-                    <Typography color="text.secondary">{item.value}</Typography>
-                  </Stack>
-                ))}
-              </Stack>
-            </CardContent>
-          </Card>
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              startIcon={<SettingsInputComponentIcon />}
-              onClick={() => void handleIoReset()}
-              disabled={ioResetLoading}
-            >
-              Test IO Reset (MQTT)
-            </Button>
-            <Button component={RouterLink} to="/app/admin/iot" variant="outlined">
-              Open IoT Monitor
-            </Button>
-            <Button component={RouterLink} to="/app/admin/health" variant="outlined">
-              System Health
-            </Button>
-          </Stack>
-        </Stack>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-wifi"></i> {t('pages:mqttSettings')}</h3>
+          </div>
+          <div className="admin-card-body">
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              MQTT broker credentials are configured on the API server environment. The web app connects through REST and Socket.IO.
+            </Typography>
+            <div style={{ display: 'grid', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+              {mqttEnvItems.map((item) => (
+                <div key={item.label} style={{ display: 'flex', gap: '16px' }}>
+                  <div style={{ minWidth: '240px', fontWeight: 600 }}>{item.label}</div>
+                  <div style={{ color: '#64748b' }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === 'raspberrySettings' && (
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="h6">{t('pages:raspberrySettings')}</Typography>
-            <Button size="small" startIcon={<RefreshIcon />} onClick={() => void loadHealth()} disabled={healthLoading}>
-              {t('common:refresh')}
-            </Button>
-          </Stack>
-          <Card>
-            <CardContent>
-              <Stack spacing={2}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography fontWeight={600}>{t('pages:mqttStatus')}</Typography>
-                  <Chip
-                    size="small"
-                    color={appHealth?.mqttConnected ? 'success' : 'error'}
-                    label={appHealth?.mqttConnected ? t('common:online') : t('common:offline')}
-                  />
-                </Stack>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography fontWeight={600}>{t('pages:raspberryStatus')}</Typography>
-                  <Chip
-                    size="small"
-                    color={appHealth?.status === 'ok' ? 'success' : 'warning'}
-                    label={appHealth?.status === 'ok' ? t('common:online') : t('common:unknown')}
-                  />
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  API health timestamp: {appHealth?.timestamp ?? '—'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Raspberry Pi IO bridge health is inferred from API connectivity and MQTT broker status reported by the backend.
-                </Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Stack>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fab fa-raspberry-pi"></i> {t('pages:raspberrySettings')}</h3>
+            <div className="admin-actions">
+              <button className="fx-btn fx-btn-secondary" onClick={() => void loadHealth()} disabled={healthLoading}>
+                <i className="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div className="admin-card-body">
+            <div style={{ display: 'grid', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontWeight: 600, minWidth: '150px' }}>{t('pages:mqttStatus')}</span>
+                <span className={`fx-badge ${appHealth?.mqttConnected ? 'fx-badge-success' : 'fx-badge-danger'}`}>
+                  {appHealth?.mqttConnected ? t('common:online') : t('common:offline')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontWeight: 600, minWidth: '150px' }}>{t('pages:raspberryStatus')}</span>
+                <span className={`fx-badge ${appHealth?.status === 'ok' ? 'fx-badge-success' : 'fx-badge-warning'}`}>
+                  {appHealth?.status === 'ok' ? t('common:online') : t('common:unknown')}
+                </span>
+              </div>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                API health timestamp: {appHealth?.timestamp ?? '—'}<br/>
+                Raspberry Pi IO bridge health is inferred from API connectivity and MQTT broker status reported by the backend.
+              </Typography>
+
+              <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+                <button className="fx-btn fx-btn-accent" onClick={() => void handleIoReset()} disabled={ioResetLoading}>
+                  <i className="fas fa-power-off"></i> Test IO Reset (MQTT)
+                </button>
+                <Button component={RouterLink} to="/app/admin/iot" variant="outlined" sx={{ height: '38px' }}>
+                  Open IoT Monitor
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === 'outputMapping' && (
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={2}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openIoCreate}>
-              {t('common:create')}
-            </Button>
-            <Button startIcon={<RefreshIcon />} onClick={() => void loadIoDevices()}>
-              {t('common:refresh')}
-            </Button>
-          </Stack>
-          <DataGrid
-            autoHeight
-            rows={ioDevices}
-            columns={ioColumns}
-            loading={ioLoading}
-            disableRowSelectionOnClick
-            pageSizeOptions={[10, 20, 50]}
-            initialState={{ pagination: { paginationModel: { pageSize: 20 } } }}
-            sx={{ bgcolor: 'background.paper', borderRadius: 2 }}
-          />
-        </Stack>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-network-wired"></i> {t('pages:outputMapping')}</h3>
+            <div className="admin-actions">
+              <button className="fx-btn fx-btn-secondary" onClick={() => void loadIoDevices()}>
+                <i className="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div className="admin-card-body">
+            <div className="admin-helper-panel">
+              <div>
+                <div className="admin-helper-title">
+                  <i className="fab fa-raspberry-pi"></i>
+                  ตั้งค่า Raspi แบบใช้งานหน้างาน
+                </div>
+                <ol className="admin-step-list">
+                  <li>เพิ่ม Raspi gateway ด้วย IP ของเครื่อง Raspberry Pi และ port 8080</li>
+                  <li>ไปที่ Rack Configuration เพื่อผูก IO Device ID กับ rack/box และใส่ pin ที่ต่อจริง</li>
+                  <li>กด Test IO Reset หรือเปิด IoT Monitor เพื่อดูสถานะ gateway ก่อนใช้งาน picklist</li>
+                </ol>
+              </div>
+              <div className="admin-helper-actions">
+                <button type="button" className="fx-btn fx-btn-accent" onClick={applyRaspiPreset}>
+                  <i className="fas fa-bolt"></i> ใช้ค่า Raspi preset
+                </button>
+                <Button component={RouterLink} to="/app/admin/iot" variant="outlined" sx={{ height: '38px' }}>
+                  เปิด IoT Monitor
+                </Button>
+              </div>
+            </div>
+
+            <div className="admin-metric-strip">
+              <div><span>{ioDevices.length}</span><small>IO devices</small></div>
+              <div><span>{adminOverview.raspiCount}</span><small>Raspi gateways</small></div>
+              <div><span>{adminOverview.boxCount}</span><small>Boxes mapped</small></div>
+            </div>
+            
+            {/* Inline Form for IO Devices */}
+            <form className="admin-form-inline" onSubmit={(e) => { e.preventDefault(); void saveIo(); }}>
+              <div className="admin-form-heading">
+                <strong>{editingIo ? 'แก้ไข IO Device' : 'เพิ่ม IO Device'}</strong>
+                <small>สำหรับ Raspi ให้ใช้ controller เป็น Raspi gateway และ URL format ตาม preset</small>
+              </div>
+              <div className="admin-field"><label>Name *</label><input required value={ioForm.name} onChange={e => setIoForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div className="admin-field"><label>IP Address *</label><input required value={ioForm.ipAddress} onChange={e => setIoForm(p => ({ ...p, ipAddress: e.target.value }))} /></div>
+              <div className="admin-field" style={{ minWidth: '100px', flex: '0 1 100px' }}><label>Port</label><input type="number" value={ioForm.port} onChange={e => setIoForm(p => ({ ...p, port: e.target.value }))} /></div>
+              <div className="admin-field" style={{ minWidth: '120px', flex: '0 1 120px' }}><label>Controller</label>
+                <select
+                  value={ioForm.controllerType}
+                  onChange={e => setIoForm(p => ({
+                    ...p,
+                    controllerType: e.target.value,
+                    port: e.target.value === 'raspi' ? RASPI_IO_PORT : p.port,
+                    urlFormat: e.target.value === 'raspi'
+                      ? RASPI_IO_URL_FORMAT
+                      : p.urlFormat,
+                  }))}
+                >
+                  <option value="http">HTTP</option>
+                  <option value="mqtt">MQTT</option>
+                  <option value="raspi">Raspi gateway</option>
+                </select>
+              </div>
+              <div className="admin-field" style={{ minWidth: '250px' }}>
+                <label>Command URL format</label>
+                <input value={ioForm.urlFormat} onChange={e => setIoForm(p => ({ ...p, urlFormat: e.target.value }))} />
+                {ioForm.controllerType === 'raspi' && <small className="admin-field-hint">Raspi endpoint: {RASPI_IO_URL_FORMAT}</small>}
+              </div>
+              <div className="admin-field"><label>Remark</label><input value={ioForm.remark} onChange={e => setIoForm(p => ({ ...p, remark: e.target.value }))} /></div>
+              
+              <div className="admin-actions" style={{ marginLeft: 'auto' }}>
+                {editingIo && (
+                  <button type="button" className="fx-btn fx-btn-secondary" onClick={() => { setEditingIo(null); setIoForm(emptyIoForm()); }}>
+                    Cancel
+                  </button>
+                )}
+                <button type="submit" className="fx-btn fx-btn-accent" disabled={ioSaving}>
+                  {ioSaving ? <i className="fas fa-spinner fa-spin"></i> : (editingIo ? <i className="fas fa-save"></i> : <i className="fas fa-plus"></i>)}
+                  {editingIo ? ' Update' : ' Add'}
+                </button>
+              </div>
+            </form>
+
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>IP Address</th>
+                    <th>Port</th>
+                    <th>Controller</th>
+                    <th>URL Format</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ioLoading ? (
+                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}><i className="fas fa-circle-notch fa-spin"></i> Loading...</td></tr>
+                  ) : ioDevices.length === 0 ? (
+                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>No IO devices mapped.</td></tr>
+                  ) : ioDevices.map(row => (
+                    <tr key={row.id}>
+                      <td style={{ fontWeight: 600 }}>{row.name}</td>
+                      <td>{row.ipAddress}</td>
+                      <td>{row.port}</td>
+                      <td>{row.controllerType}</td>
+                      <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{row.urlFormat}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="admin-actions" style={{ justifyContent: 'flex-end' }}>
+                          <button className="btn-icon edit" onClick={() => {
+                            setEditingIo(row);
+                            setIoForm({
+                              name: row.name,
+                              ipAddress: row.ipAddress,
+                              port: String(row.port),
+                              controllerType: row.controllerType,
+                              urlFormat: row.urlFormat,
+                              remark: row.remark ?? '',
+                            });
+                          }} title="Edit">
+                            <i className="fas fa-edit"></i>
+                          </button>
+                          <button className="btn-icon delete" onClick={() => setIoDeleteTarget(row)} title="Delete">
+                            <i className="fas fa-trash-alt"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === 'languageSettings' && (
-        <Card sx={{ maxWidth: 480 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              {t('pages:languageSettings')}
-            </Typography>
-            <FormControl component="fieldset">
-              <RadioGroup value={language} onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}>
-                <FormControlLabel value="th" control={<Radio />} label={t('common:thai')} />
-                <FormControlLabel value="en" control={<Radio />} label={t('common:english')} />
-              </RadioGroup>
-            </FormControl>
-            <Box sx={{ mt: 2 }}>
-              <Button variant="contained" onClick={() => void handleLanguageSave()} disabled={languageSaving}>
-                {languageSaving ? t('common:loading') : t('common:save')}
-              </Button>
-            </Box>
-          </CardContent>
-        </Card>
+        <div className="admin-card" style={{ maxWidth: '500px' }}>
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-language"></i> {t('pages:languageSettings')}</h3>
+          </div>
+          <div className="admin-card-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="radio" name="lang" value="th" checked={language === 'th'} onChange={() => setLanguage('th')} />
+                {t('common:thai')}
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="radio" name="lang" value="en" checked={language === 'en'} onChange={() => setLanguage('en')} />
+                {t('common:english')}
+              </label>
+            </div>
+            <button className="fx-btn fx-btn-accent" onClick={() => void handleLanguageSave()} disabled={languageSaving}>
+              {languageSaving ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-save"></i>} {t('common:save')}
+            </button>
+          </div>
+        </div>
       )}
 
       {tab === 'systemSettings' && (
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="h6">{t('pages:systemSettings')}</Typography>
-            <Button size="small" startIcon={<RefreshIcon />} onClick={() => void loadHealth()} disabled={healthLoading}>
-              {t('common:refresh')}
-            </Button>
-          </Stack>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <Card sx={{ flex: 1 }}>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                  <Typography fontWeight={700}>CPK Service</Typography>
-                  <Chip size="small" color={cpkHealth?.status === 'ok' ? 'success' : 'error'} label={cpkHealth?.status ?? '—'} />
-                </Stack>
-                <Typography variant="body2">Latency: {cpkHealth?.latencyMs ?? '—'} ms</Typography>
-                <Typography variant="body2">
-                  Version:{' '}
-                  {typeof cpkHealth?.data === 'object' && cpkHealth?.data && 'Version' in (cpkHealth.data as object)
-                    ? String((cpkHealth.data as { Version?: string }).Version)
-                    : cpkHealth?.version ?? '—'}
-                </Typography>
-                {cpkHealth?.message && (
-                  <Typography variant="body2" color="error">
-                    {cpkHealth.message}
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-            <Card sx={{ flex: 1 }}>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                  <Typography fontWeight={700}>PDService</Typography>
-                  <Chip size="small" color={pdsHealth?.status === 'ok' ? 'success' : 'error'} label={pdsHealth?.status ?? '—'} />
-                </Stack>
-                <Typography variant="body2">Latency: {pdsHealth?.latencyMs ?? '—'} ms</Typography>
-                <Typography variant="body2">HTTP Code: {pdsHealth?.httpCode ?? '—'}</Typography>
-                {pdsHealth?.message && (
-                  <Typography variant="body2" color="error">
-                    {pdsHealth.message}
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          </Stack>
-        </Stack>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3 className="admin-card-title"><i className="fas fa-heartbeat"></i> {t('pages:systemSettings')}</h3>
+            <div className="admin-actions">
+              <button className="fx-btn fx-btn-secondary" onClick={() => void loadHealth()} disabled={healthLoading}>
+                <i className="fas fa-sync-alt"></i>
+              </button>
+              <button
+                className="fx-btn fx-btn-accent"
+                onClick={() => void loadCpkEndpointHealth()}
+                disabled={cpkEndpointLoading}
+              >
+                {cpkEndpointLoading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-network-wired"></i>}
+                {' '}{t('pages:cpkEndpointCheck')}
+              </button>
+            </div>
+          </div>
+          <div className="admin-card-body">
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 300px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: 700 }}>{t('pages:cpkServiceName')}</span>
+                  <span className={`fx-badge ${cpkHealth?.status === 'ok' ? 'fx-badge-success' : 'fx-badge-danger'}`}>
+                    {cpkHealth?.status ?? '—'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#475569' }}>
+                  <p style={{ margin: '0 0 4px' }}>{t('pages:healthLatency')}: {cpkHealth?.latencyMs ?? '—'} ms</p>
+                  <p style={{ margin: '0 0 4px' }}>{t('pages:cpkVersionLabel')}: {cpkVersionText}</p>
+                  {cpkHealth?.message && <p style={{ margin: '4px 0 0', color: '#ef4444' }}>{cpkHealth.message}</p>}
+                </div>
+              </div>
+
+              <div style={{ flex: '1 1 300px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: 700 }}>PDService</span>
+                  <span className={`fx-badge ${pdsHealth?.status === 'ok' ? 'fx-badge-success' : 'fx-badge-danger'}`}>
+                    {pdsHealth?.status ?? '—'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#475569' }}>
+                  <p style={{ margin: '0 0 4px' }}>Latency: {pdsHealth?.latencyMs ?? '—'} ms</p>
+                  <p style={{ margin: '0 0 4px' }}>HTTP Code: {pdsHealth?.httpCode ?? '—'}</p>
+                  {pdsHealth?.message && <p style={{ margin: '4px 0 0', color: '#ef4444' }}>{pdsHealth.message}</p>}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem' }}>{t('pages:cpkEndpointLatencyTitle')}</h4>
+                  <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
+                    {cpkEndpointHealth
+                      ? `${t('pages:healthUpdated')} ${new Date(cpkEndpointHealth.timestamp).toLocaleString()}`
+                      : t('pages:cpkEndpointLatencyHint')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>{t('pages:cpkEndpointColumnEndpoint')}</th>
+                      <th>{t('pages:cpkEndpointColumnMethod')}</th>
+                      <th>{t('pages:healthLatency')}</th>
+                      <th>{t('pages:cpkEndpointColumnHttp')}</th>
+                      <th>{t('pages:cpkEndpointColumnCpk')}</th>
+                      <th>{t('pages:cpkEndpointColumnStatus')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cpkEndpointLoading && !cpkEndpointHealth ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>
+                          <i className="fas fa-circle-notch fa-spin"></i> Loading...
+                        </td>
+                      </tr>
+                    ) : !cpkEndpointHealth ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>
+                          {t('pages:cpkEndpointLatencyHint')}
+                        </td>
+                      </tr>
+                    ) : (
+                      cpkEndpointHealth.endpoints.map((endpoint) => (
+                        <tr key={`${endpoint.method}-${endpoint.name}`}>
+                          <td>
+                            <div style={{ fontWeight: 700 }}>{endpoint.name}</div>
+                            <div style={{ color: '#64748b', fontSize: '0.78rem', wordBreak: 'break-all' }}>
+                              {endpoint.url}
+                            </div>
+                          </td>
+                          <td>{endpoint.method}</td>
+                          <td>{endpoint.latencyMs} ms</td>
+                          <td>{endpoint.httpCode || '—'}</td>
+                          <td>{endpoint.cpkStatus ?? '—'}</td>
+                          <td>
+                            <span className={`fx-badge ${endpoint.status === 'reachable' ? 'fx-badge-success' : 'fx-badge-danger'}`}>
+                              {endpoint.status === 'reachable'
+                                ? t('pages:cpkEndpointReachable')
+                                : t('pages:cpkEndpointError')}
+                            </span>
+                            {endpoint.message && (
+                              <div style={{ marginTop: 4, color: '#64748b', fontSize: '0.78rem' }}>
+                                {endpoint.message}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
-      <Dialog open={entityDialogOpen} onClose={() => setEntityDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingEntity ? t('common:edit') : t('common:create')} {rackEntity}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {renderEntityFields()}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setEntityDialogOpen(false)} disabled={entitySaving}>
-            {t('common:cancel')}
-          </Button>
-          <Button variant="contained" onClick={() => void saveEntity()} disabled={entitySaving}>
-            {entitySaving ? t('common:loading') : t('common:save')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        </div>
+      </div>
 
       <ConfirmDialog
         open={Boolean(entityDeleteTarget)}
@@ -997,30 +1456,6 @@ export function SystemAdminPage() {
         onConfirm={() => void deleteEntity()}
         onCancel={() => setEntityDeleteTarget(null)}
       />
-
-      <Dialog open={ioDialogOpen} onClose={() => setIoDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingIo ? t('common:edit') : t('common:create')} IO Device</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="Name" value={ioForm.name} onChange={(e) => setIoForm((p) => ({ ...p, name: e.target.value }))} required fullWidth />
-            <TextField label="IP Address" value={ioForm.ipAddress} onChange={(e) => setIoForm((p) => ({ ...p, ipAddress: e.target.value }))} required fullWidth />
-            <Stack direction="row" spacing={2}>
-              <TextField label="Port" value={ioForm.port} onChange={(e) => setIoForm((p) => ({ ...p, port: e.target.value }))} fullWidth />
-              <TextField label="Controller Type" value={ioForm.controllerType} onChange={(e) => setIoForm((p) => ({ ...p, controllerType: e.target.value }))} fullWidth />
-            </Stack>
-            <TextField label="URL Format" value={ioForm.urlFormat} onChange={(e) => setIoForm((p) => ({ ...p, urlFormat: e.target.value }))} fullWidth />
-            <TextField label="Remark" value={ioForm.remark} onChange={(e) => setIoForm((p) => ({ ...p, remark: e.target.value }))} fullWidth />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setIoDialogOpen(false)} disabled={ioSaving}>
-            {t('common:cancel')}
-          </Button>
-          <Button variant="contained" onClick={() => void saveIo()} disabled={ioSaving || !ioForm.name.trim() || !ioForm.ipAddress.trim()}>
-            {ioSaving ? t('common:loading') : t('common:save')}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <ConfirmDialog
         open={Boolean(ioDeleteTarget)}

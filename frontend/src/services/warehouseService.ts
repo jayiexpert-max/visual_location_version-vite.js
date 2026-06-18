@@ -12,14 +12,11 @@ function tvKioskHeaders(tvKey?: string): Record<string, string> | undefined {
 
 export async function getHierarchy(tvKey?: string): Promise<WarehouseHierarchy> {
   const headers = tvKioskHeaders(tvKey);
-  if (headers) {
-    const { data } = await axios.get<ApiSuccessResponse<WarehouseHierarchy>>(
-      `${API_BASE}/warehouse/hierarchy`,
-      { headers },
-    );
-    return data.data;
-  }
-  return apiGet<WarehouseHierarchy>('/warehouse/hierarchy');
+  const { data } = await axios.get<ApiSuccessResponse<WarehouseHierarchy>>(
+    `${API_BASE}/warehouse/hierarchy`,
+    headers ? { headers } : undefined,
+  );
+  return data.data;
 }
 
 export async function getRack(id: number): Promise<unknown> {
@@ -129,4 +126,62 @@ export async function adminUpdateSlot(id: number, payload: Record<string, unknow
 
 export async function adminDeleteSlot(id: number): Promise<void> {
   await apiDelete(`/warehouse/admin/slots/${id}`);
+}
+
+export async function adminListProducts(boxId?: number): Promise<import('../types/adminProducts').ProductAdminRow[]> {
+  return apiGet('/warehouse/admin/products', boxId ? { boxId } : undefined);
+}
+
+export async function adminCreateProduct(payload: {
+  slotId: number;
+  name?: string;
+  qty?: number;
+  remark?: string;
+}): Promise<unknown> {
+  return apiPost('/warehouse/admin/products', payload);
+}
+
+export async function adminUpdateProduct(
+  id: number,
+  payload: { slotId?: number; name?: string; qty?: number; remark?: string },
+): Promise<unknown> {
+  return apiPatch(`/warehouse/admin/products/${id}`, payload);
+}
+
+export async function adminDeleteProduct(id: number): Promise<void> {
+  await apiDelete(`/warehouse/admin/products/${id}`);
+}
+
+export async function adminListProductBoxOptions(): Promise<
+  import('../types/adminProducts').ProductBoxOption[]
+> {
+  return apiGet('/warehouse/admin/products/box-options');
+}
+
+export async function adminListEmptyProductSlots(
+  boxId?: number,
+  currentSlotId?: number,
+): Promise<import('../types/adminProducts').ProductSlotOption[]> {
+  const params: Record<string, number> = {};
+  if (boxId) params.boxId = boxId;
+  if (currentSlotId) params.currentSlotId = currentSlotId;
+  return apiGet('/warehouse/admin/products/empty-slots', Object.keys(params).length ? params : undefined);
+}
+
+export async function adminGetNextEmptyProductSlot(
+  boxId?: number,
+): Promise<{ slotId: number | null }> {
+  return apiGet('/warehouse/admin/products/next-empty-slot', boxId ? { boxId } : undefined);
+}
+
+export async function adminGetFifoSettings(): Promise<import('../types/adminProducts').FifoSettings> {
+  return apiGet('/warehouse/admin/fifo-settings');
+}
+
+export async function adminUpdateFifoSettings(payload: {
+  fifoIssueMode: string;
+  fifoDummyIm: string;
+  confirmPassword: string;
+}): Promise<import('../types/adminProducts').FifoSettings> {
+  return apiPatch('/warehouse/admin/fifo-settings', payload);
 }

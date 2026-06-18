@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsInt,
   IsNotEmpty,
@@ -110,4 +111,9 @@ export class ReceiveItemDto {
   @IsOptional()
   @IsString()
   remark?: string;
+
+  @ApiPropertyOptional({ description: 'Skip CPK RES_PUIDRecv when PUID already received in CPK' })
+  @IsOptional()
+  @IsBoolean()
+  skipCpk?: boolean;
 }

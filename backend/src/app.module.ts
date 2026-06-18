@@ -22,9 +22,12 @@ import { TvModule } from './modules/tv/tv.module';
 import { IoModule } from './modules/io/io.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { HealthModule } from './modules/health/health.module';
+import { MaterialsModule } from './modules/materials/materials.module';
+import { WoBomModule } from './modules/wo-bom/wo-bom.module';
 import { MqttModule } from './modules/mqtt/mqtt.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AbdulChatModule } from './modules/abdul-chat/abdul-chat.module';
 
 @Module({
   imports: [
@@ -69,6 +72,9 @@ import { AuditModule } from './modules/audit/audit.module';
     IoModule,
     RealtimeModule,
     HealthModule,
+    MaterialsModule,
+    WoBomModule,
+    AbdulChatModule,
   ],
   providers: [
     {

@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router-dom';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,12 +21,20 @@ import { useSocketEvent } from '../../hooks/useSocket';
 import { getErrorMessage } from '../../services/apiClient';
 import * as iotMonitor from '../../services/iotMonitorService';
 import { SocketEvents } from '../../services/socketService';
+import { useAuthStore } from '../../store/authStore';
 import type { MqttLogEntry, RaspberryDevice } from '../../services/iotMonitorService';
 
 type MonitorTab = 'mqtt' | 'raspi' | 'health' | 'events';
 
 export function IoMonitorPage() {
+  const { t } = useTranslation(['pages', 'common']);
   const { user } = useAuth();
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const canAccessIoMonitor = user?.role === 'manage';
+  const socketAuth = useMemo(
+    () => (accessToken ? { token: accessToken } : undefined),
+    [accessToken],
+  );
   const [tab, setTab] = useState<MonitorTab>('mqtt');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +43,7 @@ export function IoMonitorPage() {
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
   const [events, setEvents] = useState<Array<{ event: string; timestamp: string }>>([]);
 
-  if (user?.role !== 'admin') {
+  if (!canAccessIoMonitor) {
     return <Navigate to="/app" replace />;
   }
 
@@ -55,11 +64,11 @@ export function IoMonitorPage() {
         (realtimeEvents as Array<{ event: string; timestamp: string }>) ?? [],
       );
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to load IoT monitor data'));
+      setError(getErrorMessage(err, t('pages:ioMonitorLoadError'), t));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -67,53 +76,56 @@ export function IoMonitorPage() {
 
   useSocketEvent(SocketEvents.ioStatus, () => {
     void load();
-  }, true);
+  }, true, socketAuth);
 
   useSocketEvent(SocketEvents.deviceOnline, () => {
     void load();
-  }, true);
+  }, true, socketAuth);
 
   useSocketEvent(SocketEvents.deviceOffline, () => {
     void load();
-  }, true);
+  }, true, socketAuth);
 
   const mqttColumns = useMemo<GridColDef[]>(
     () => [
-      { field: 'createdAt', headerName: 'Time', flex: 1, minWidth: 160 },
-      { field: 'direction', headerName: 'Dir', width: 100 },
-      { field: 'topic', headerName: 'Topic', flex: 1.2, minWidth: 200 },
-      { field: 'deviceId', headerName: 'Device', width: 90 },
-      { field: 'status', headerName: 'Status', width: 110 },
+      { field: 'createdAt', headerName: t('pages:ioMonitorColTime'), flex: 1, minWidth: 160 },
+      { field: 'direction', headerName: t('pages:ioMonitorColDir'), width: 100 },
+      { field: 'topic', headerName: t('pages:ioMonitorColTopic'), flex: 1.2, minWidth: 200 },
+      { field: 'deviceId', headerName: t('pages:ioMonitorColDevice'), width: 90 },
+      { field: 'status', headerName: t('pages:ioMonitorColStatus'), width: 110 },
     ],
-    [],
+    [t],
   );
 
   const raspiColumns = useMemo<GridColDef[]>(
     () => [
-      { field: 'deviceId', headerName: 'Device ID', width: 100 },
-      { field: 'ipAddress', headerName: 'IP', flex: 1, minWidth: 140 },
-      { field: 'status', headerName: 'Status', width: 110 },
-      { field: 'outputCount', headerName: 'Outputs', width: 100 },
-      { field: 'lastHeartbeatAt', headerName: 'Last Heartbeat', flex: 1, minWidth: 180 },
+      { field: 'deviceId', headerName: t('pages:ioMonitorColDeviceId'), width: 100 },
+      { field: 'name', headerName: 'Name', flex: 1, minWidth: 150 },
+      { field: 'ipAddress', headerName: t('pages:ioMonitorColIp'), flex: 1, minWidth: 140 },
+      { field: 'port', headerName: 'Port', width: 90 },
+      { field: 'status', headerName: t('pages:ioMonitorColStatus'), width: 110 },
+      { field: 'outputCount', headerName: t('pages:ioMonitorColOutputs'), width: 100 },
+      { field: 'message', headerName: 'Gateway', flex: 1, minWidth: 180 },
+      { field: 'lastHeartbeatAt', headerName: t('pages:ioMonitorColLastHeartbeat'), flex: 1, minWidth: 180 },
     ],
-    [],
+    [t],
   );
 
   const eventColumns = useMemo<GridColDef[]>(
     () => [
-      { field: 'timestamp', headerName: 'Time', flex: 1, minWidth: 180 },
-      { field: 'event', headerName: 'Event', flex: 1, minWidth: 180 },
+      { field: 'timestamp', headerName: t('pages:ioMonitorColTime'), flex: 1, minWidth: 180 },
+      { field: 'event', headerName: t('pages:ioMonitorColEvent'), flex: 1, minWidth: 180 },
     ],
-    [],
+    [t],
   );
 
   return (
     <Box>
       <PageHeader
-        title="IoT Monitor"
+        title={t('pages:ioMonitorTitle')}
         action={
           <Button startIcon={<RefreshIcon />} onClick={() => void load()} disabled={loading}>
-            Refresh
+            {t('common:refresh')}
           </Button>
         }
       />
@@ -125,10 +137,10 @@ export function IoMonitorPage() {
       )}
 
       <Tabs value={tab} onChange={(_, value: MonitorTab) => setTab(value)} sx={{ mb: 2 }}>
-        <Tab value="mqtt" label="MQTT Monitor" />
-        <Tab value="raspi" label="Raspberry Devices" />
-        <Tab value="health" label="Device Health" />
-        <Tab value="events" label="Realtime Events" />
+        <Tab value="mqtt" label={t('pages:ioMonitorTabMqttFull')} />
+        <Tab value="raspi" label={t('pages:ioMonitorTabRaspiFull')} />
+        <Tab value="health" label={t('pages:ioMonitorTabHealthFull')} />
+        <Tab value="events" label={t('pages:ioMonitorTabEvents')} />
       </Tabs>
 
       {tab === 'mqtt' && (
@@ -168,19 +180,19 @@ export function IoMonitorPage() {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Combined Health
+                {t('pages:ioMonitorCombinedHealth')}
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Chip
-                  label={`MQTT: ${(health?.mqtt as { connected?: boolean })?.connected ? 'connected' : 'disconnected'}`}
+                  label={`MQTT: ${(health?.mqtt as { connected?: boolean })?.connected ? t('pages:healthConnected') : t('pages:healthDisconnected')}`}
                   color={(health?.mqtt as { connected?: boolean })?.connected ? 'success' : 'error'}
                 />
                 <Chip
-                  label={`Raspi online: ${(health?.raspi as { onlineDevices?: number })?.onlineDevices ?? 0}`}
+                  label={`${t('pages:healthRaspi')} ${t('pages:healthOnlineCount')}: ${(health?.raspiGateways as RaspberryDevice[] | undefined)?.filter((d) => d.status === 'online').length ?? 0}`}
                   color="primary"
                 />
                 <Chip
-                  label={`IO devices: ${(health?.io as { registeredDevices?: number })?.registeredDevices ?? 0}`}
+                  label={`${t('pages:healthEthernetIo')}: ${(health?.io as { registeredDevices?: number })?.registeredDevices ?? 0}`}
                 />
               </Stack>
             </CardContent>

@@ -11,6 +11,10 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { SocketEvents } from '@visual-location/shared';
+import type {
+  PicklistUpdatePayload,
+  ReservationUpdatePayload,
+} from '@visual-location/shared';
 import { Server, Socket } from 'socket.io';
 import type { TvHighlightResponseDto } from '../tv/dto/tv-highlight.dto';
 
@@ -95,6 +99,14 @@ export class HighlightGateway implements OnGatewayInit, OnGatewayConnection {
 
   emitInventoryUpdate(payload: InventoryUpdatePayload): void {
     this.broadcast(SocketEvents.inventoryUpdate, payload);
+  }
+
+  emitReservationUpdate(payload: ReservationUpdatePayload): void {
+    this.broadcast(SocketEvents.reservationUpdate, payload);
+  }
+
+  emitPicklistUpdate(payload: PicklistUpdatePayload): void {
+    this.broadcast(SocketEvents.picklistUpdate, payload);
   }
 
   getRecentEvents(limit = 50): typeof this.recentEvents {

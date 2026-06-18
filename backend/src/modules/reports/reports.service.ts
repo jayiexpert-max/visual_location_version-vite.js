@@ -51,7 +51,7 @@ export class ReportsService {
     return buildPaginatedResult(items, total, filters);
   }
 
-  private mapExpirationItem(row: InventoryReceive): ExpirationReportItemDto {
+  private mapExpirationItem(row: any): ExpirationReportItemDto {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -73,15 +73,12 @@ export class ReportsService {
     }
 
     return {
-      id: row.id,
       hanaPart: row.hanaPart,
       im: row.im,
-      puid: row.puid,
-      qtyRemain: row.qtyRemain,
+      puidCount: parseInt(row.puidCount, 10) || 0,
+      totalQty: parseInt(row.totalQty, 10) || 0,
+      lotsRaw: row.lotsRaw,
       expirationDate: row.expirationDate,
-      locShelf: row.locShelf,
-      locLevel: row.locLevel,
-      locBox: row.locBox,
       statusText,
       daysLeft,
     };

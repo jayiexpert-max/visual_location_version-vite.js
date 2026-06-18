@@ -11,12 +11,13 @@ import type { SupportedLanguage, UserRole } from '@visual-location/shared';
 import { canAccessMenu, type MenuKey } from '@visual-location/shared';
 import * as authService from '../services/authService';
 import { useAuthStore } from '../store/authStore';
+import { redirectToLogin } from '../utils/authRedirect';
 import type { AuthUser } from '../types/api';
 
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, deviceType?: 'desktop' | 'handheld' | 'tv') => Promise<void>;
   logout: () => Promise<void>;
   changeLanguage: (lang: SupportedLanguage) => Promise<void>;
   canAccess: (menu: MenuKey) => boolean;
@@ -52,15 +53,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const state = useAuthStore.getState();
       if (state.expiresAt && Date.now() >= state.expiresAt) {
         clearAuth();
+        redirectToLogin(true);
       }
     }, 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated, clearAuth]);
 
   const login = useCallback(
-    async (username: string, password: string) => {
-      const result = await authService.login(username, password, 'desktop');
-      setAuth(result.accessToken, result.refreshToken, result.expiresIn, result.user);
+    async (
+      username: string,
+      password: string,
+      deviceType: 'desktop' | 'handheld' | 'tv' = 'desktop',
+    ) => {
+      const result = await authService.login(username, password, deviceType);
+      setAuth(result.accessToken, result.refreshToken, result.expiresIn, result.user, deviceType);
       await i18n.changeLanguage(result.user.lang);
     },
     [setAuth, i18n],

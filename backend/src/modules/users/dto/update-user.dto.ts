@@ -43,4 +43,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   remark?: string | null;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  isActive?: boolean;
 }

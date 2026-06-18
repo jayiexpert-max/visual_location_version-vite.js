@@ -3,12 +3,12 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
   MqttHighlightPayload,
   MqttOffPayload,
-  MqttResetPayload,
 } from '@visual-location/shared';
 import { Box } from '../../entities/box.entity';
 import { Rack } from '../../entities/rack.entity';
@@ -23,7 +23,7 @@ import { AuditService } from '../audit/audit.service';
 import { MqttPublisherService } from '../mqtt/mqtt-publisher.service';
 import { MqttConfigService } from '../mqtt/mqtt-config.service';
 import { HighlightGateway } from '../realtime/highlight.gateway';
-import type { IoBoxCommandDto, IoCommandResultDto } from './dto/io-command.dto';
+import type { IoBoxCommandDto, IoCommandResultDto, IoTestOutputDto } from './dto/io-command.dto';
 
 export interface IoOutputPlan {
   pin: number;
@@ -55,6 +55,7 @@ export class IoService {
   private readonly logger = new Logger(IoService.name);
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly mqttPublisher: MqttPublisherService,
     private readonly mqttConfig: MqttConfigService,
     private readonly highlightGateway: HighlightGateway,
@@ -93,48 +94,303 @@ export class IoService {
       };
     }
 
-    const payload: MqttResetPayload = { command: 'reset' };
+    const devices: IoDevicePlan[] = [];
+    let pinCount = 0;
+
+    for (const [deviceId, outputs] of byDevice.entries()) {
+      const device = await this.ethernetIoRepository.findOne({
+        where: { id: deviceId },
+      });
+      if (!device) {
+        continue;
+      }
+      devices.push({ deviceId, device, outputs });
+      pinCount += outputs.length;
+    }
+
+    if (devices.length === 0) {
+      return {
+        status: 'warning',
+        message: 'No valid IO devices found for configured pins',
+      };
+    }
+
+    const plan: IoBoxPlan = {
+      location: {
+        boxId: 0,
+        boxCode: '',
+        slotId: null,
+        slotNo: null,
+        levelNo: null,
+        rackName: '',
+        resetAll: true,
+      },
+      devices,
+    };
+
+    await this.executeIoPlan('off', plan, { userId, logAction: IoCommandAction.Reset });
+    this.highlightGateway.emitHighlightClear();
+
+    return {
+      status: 'success',
+      message: `All lights reset (${pinCount} outputs off)`,
+      pinCount,
+    };
+  }
+
+  async testOutput(
+    dto: IoTestOutputDto,
+    userId?: number,
+  ): Promise<IoCommandResultDto> {
+    const device = await this.ethernetIoRepository.findOne({
+      where: { id: dto.deviceId },
+    });
+
+    if (!device) {
+      throw new BadRequestException('IO device not found');
+    }
+
+    const role = dto.role?.trim() || 'test';
+    const plan: IoBoxPlan = {
+      location: {
+        boxId: 0,
+        boxCode: 'TEST',
+        slotId: null,
+        slotNo: null,
+        levelNo: null,
+        rackName: 'Admin test',
+      },
+      devices: [
+        {
+          deviceId: device.id,
+          device,
+          outputs: [{ pin: dto.pin, state: 1, role }],
+        },
+      ],
+    };
+
+    await this.executeIoPlan('highlight', plan, {
+      userId,
+      logAction: IoCommandAction.Highlight,
+    });
+
+    return {
+      status: 'success',
+      message: `Output pin ${dto.pin} test sent`,
+      pinCount: 1,
+    };
+  }
+
+  private get towerOnly(): boolean {
+    return this.configService.get<boolean>('io.towerOnly', false);
+  }
+
+  private get raspiIoKey(): string {
+    return this.configService.get<string>('io.raspiIoKey', '');
+  }
+
+  private isRaspiDevice(device: EthernetIo): boolean {
+    return device.controllerType?.toLowerCase() === 'raspi';
+  }
+
+  private buildRaspiUrl(device: EthernetIo): string {
+    const format = device.urlFormat?.trim() || 'http://{IP}:{PORT}/api/io/highlight';
+    return format
+      .replaceAll('{IP}', device.ipAddress)
+      .replaceAll('{PORT}', String(device.port || 8080));
+  }
+
+  private async sendRaspiPayload(
+    device: EthernetIo,
+    payload: Record<string, unknown>,
+  ): Promise<{ httpCode: number; responseText: string }> {
+    const url = this.buildRaspiUrl(device);
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.raspiIoKey.trim()) {
+      headers['X-IO-Key'] = this.raspiIoKey.trim();
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
 
     try {
-      await this.mqttPublisher.publishReset(payload);
-      await this.logCommand({
-        userId,
-        deviceId: null,
-        action: IoCommandAction.Reset,
-        topic: 'reset',
-        payload,
-        boxId: null,
-        slotNo: null,
-        status: IoCommandStatus.Published,
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
-
-      this.highlightGateway.emitIoStatus({
-        topic: this.mqttConfig.resetTopic(),
-        payload,
-        deviceId: null,
-        timestamp: new Date().toISOString(),
-      });
-      this.highlightGateway.emitHighlightClear();
-
-      return {
-        status: 'success',
-        message: 'All IO outputs reset via MQTT',
-      };
+      const responseText = await response.text();
+      if (!response.ok) {
+        let message = `Raspi returned HTTP ${response.status}`;
+        try {
+          const decoded = JSON.parse(responseText) as { message?: unknown };
+          if (decoded?.message) {
+            message += `: ${String(decoded.message)}`;
+          }
+        } catch {
+          // Keep HTTP status as the primary error, matching PHP behavior.
+        }
+        throw new Error(message);
+      }
+      return { httpCode: response.status, responseText };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'MQTT reset publish failed';
-      await this.logCommand({
-        userId,
-        deviceId: null,
-        action: IoCommandAction.Reset,
-        topic: 'reset',
-        payload,
-        boxId: null,
-        slotNo: null,
-        status: IoCommandStatus.Failed,
-        errorMessage: message,
-      });
-      throw new BadRequestException(message);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Raspi gateway request timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private raspiPayload(
+    action: 'highlight' | 'off',
+    plan: IoBoxPlan,
+    entry: IoDevicePlan,
+  ): Record<string, unknown> {
+    return {
+      action: action === 'off' ? 'off' : 'highlight',
+      duration_sec: action === 'off' ? 0 : this.mqttConfig.highlightDurationSec,
+      device_name: entry.device.name ?? '',
+      location: {
+        box_id: plan.location.boxId,
+        box_code: plan.location.boxCode ?? '',
+        slot_no: plan.location.slotNo ?? null,
+        level_no: plan.location.levelNo ?? null,
+        rack_name: plan.location.rackName ?? '',
+        reset_all: plan.location.resetAll === true ? true : undefined,
+      },
+      outputs: entry.outputs,
+    };
+  }
+
+  private async executeIoPlan(
+    action: 'highlight' | 'off',
+    plan: IoBoxPlan,
+    options: {
+      userId?: number;
+      logAction?: IoCommandAction;
+      boxId?: number;
+      slotNo?: number | null;
+    },
+  ): Promise<void> {
+    for (const entry of plan.devices) {
+      const outputPins = entry.outputs
+        .filter((output) => (action === 'off' ? true : output.state === 1))
+        .map((output) => output.pin);
+
+      if (outputPins.length === 0) {
+        continue;
+      }
+
+      const topicAction = action === 'off' ? 'off' : 'highlight';
+      const logAction =
+        options.logAction ??
+        (action === 'off' ? IoCommandAction.Off : IoCommandAction.Highlight);
+      const targetBoxId = options.boxId ?? plan.location.boxId;
+      const targetSlotNo = options.slotNo ?? plan.location.slotNo ?? null;
+
+      try {
+        if (this.isRaspiDevice(entry.device)) {
+          const payload = this.raspiPayload(action, plan, entry);
+          await this.sendRaspiPayload(entry.device, payload);
+          await this.logCommand({
+            userId: options.userId,
+            deviceId: entry.deviceId,
+            action: logAction,
+            topic: 'raspi',
+            payload,
+            boxId: targetBoxId || null,
+            slotNo: targetSlotNo,
+            status: IoCommandStatus.Published,
+          });
+          this.highlightGateway.emitIoStatus({
+            topic: this.buildRaspiUrl(entry.device),
+            payload,
+            deviceId: entry.deviceId,
+            timestamp: new Date().toISOString(),
+          });
+          continue;
+        }
+
+        if (action === 'off') {
+          const payload: MqttOffPayload = {
+            command: 'off',
+            deviceId: entry.deviceId,
+            outputs: outputPins,
+          };
+          await this.mqttPublisher.publishOff(payload);
+          await this.logCommand({
+            userId: options.userId,
+            deviceId: entry.deviceId,
+            action: logAction,
+            topic: topicAction,
+            payload,
+            boxId: targetBoxId || null,
+            slotNo: targetSlotNo,
+            status: IoCommandStatus.Published,
+          });
+          this.highlightGateway.emitIoStatus({
+            topic: this.mqttConfig.offTopic(entry.deviceId),
+            payload,
+            deviceId: entry.deviceId,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          const payload: MqttHighlightPayload = {
+            command: 'highlight',
+            deviceId: entry.deviceId,
+            boxId: plan.location.boxId,
+            slotId: plan.location.slotId,
+            outputs: outputPins,
+          };
+          await this.mqttPublisher.publishHighlight(payload);
+          await this.logCommand({
+            userId: options.userId,
+            deviceId: entry.deviceId,
+            action: logAction,
+            topic: topicAction,
+            payload,
+            boxId: targetBoxId || null,
+            slotNo: targetSlotNo,
+            status: IoCommandStatus.Published,
+          });
+          this.highlightGateway.emitIoStatus({
+            topic: this.mqttConfig.highlightTopic(entry.deviceId),
+            payload,
+            deviceId: entry.deviceId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'IO command failed';
+
+        await this.logCommand({
+          userId: options.userId,
+          deviceId: entry.deviceId,
+          action: logAction,
+          topic: this.isRaspiDevice(entry.device) ? 'raspi' : topicAction,
+          payload: this.isRaspiDevice(entry.device)
+            ? this.raspiPayload(action, plan, entry)
+            : {
+                command: action,
+                deviceId: entry.deviceId,
+                boxId: plan.location.boxId,
+                outputs: outputPins,
+              },
+          boxId: targetBoxId || null,
+          slotNo: targetSlotNo,
+          status: IoCommandStatus.Failed,
+          errorMessage: message,
+        });
+
+        throw new BadRequestException(message);
+      }
     }
   }
 
@@ -194,10 +450,10 @@ export class IoService {
       deviceOutputs.set(deviceId, outputs);
     };
 
-    addOutput(Number(row.box_dev ?? 0), Number(row.box_pin ?? 0), 'box');
+    if (!this.towerOnly) {
+      addOutput(Number(row.box_dev ?? 0), Number(row.box_pin ?? 0), 'box');
+    }
     addOutput(Number(row.rack_dev ?? 0), Number(row.io_green_pin ?? 0), 'green');
-    addOutput(Number(row.rack_dev ?? 0), Number(row.io_red_pin ?? 0), 'red');
-    addOutput(Number(row.rack_dev ?? 0), Number(row.io_yellow_pin ?? 0), 'yellow');
 
     if (deviceOutputs.size === 0) {
       return null;
@@ -236,9 +492,36 @@ export class IoService {
     return this.ethernetIoRepository.find({ order: { id: 'ASC' } });
   }
 
+  async listRaspiGatewayDevices() {
+    const devices = await this.ethernetIoRepository.find({
+      order: { id: 'ASC' },
+    });
+    const raspiDevices = devices.filter((device) => this.isRaspiDevice(device));
+
+    return Promise.all(
+      raspiDevices.map(async (device) => {
+        const health = await this.checkRaspiHealth(device);
+        return {
+          id: device.id,
+          deviceId: device.id,
+          name: device.name,
+          ipAddress: device.ipAddress,
+          port: device.port,
+          status: health.status,
+          message: health.message,
+          healthUrl: health.url,
+          lastHeartbeatAt: health.checkedAt,
+          outputCount: device.outputs,
+          controllerType: device.controllerType,
+        };
+      }),
+    );
+  }
+
   async getStatus() {
-    const [devices, recentLogs] = await Promise.all([
+    const [devices, raspiGateways, recentLogs] = await Promise.all([
       this.listDevices(),
+      this.listRaspiGatewayDevices(),
       this.ioCommandLogRepository.find({
         order: { createdAt: 'DESC' },
         take: 20,
@@ -248,6 +531,7 @@ export class IoService {
     return {
       mqttConnected: this.mqttPublisher.isConnected(),
       deviceCount: devices.length,
+      raspiGateways,
       devices: devices.map((device) => ({
         id: device.id,
         name: device.name,
@@ -266,6 +550,76 @@ export class IoService {
         createdAt: log.createdAt,
       })),
     };
+  }
+
+  private raspiHealthUrl(device: EthernetIo): string {
+    const commandUrl = this.buildRaspiUrl(device);
+    try {
+      const url = new URL(commandUrl);
+      url.pathname = '/health';
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return `http://${device.ipAddress}:${device.port || 8080}/health`;
+    }
+  }
+
+  private async checkRaspiHealth(
+    device: EthernetIo,
+  ): Promise<{
+    status: 'online' | 'offline';
+    message: string;
+    url: string;
+    checkedAt: string;
+  }> {
+    const url = this.raspiHealthUrl(device);
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (this.raspiIoKey.trim()) {
+      headers['X-IO-Key'] = this.raspiIoKey.trim();
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const checkedAt = new Date().toISOString();
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      const raw = await response.text();
+      if (!response.ok) {
+        return {
+          status: 'offline',
+          message: `HTTP ${response.status}`,
+          url,
+          checkedAt,
+        };
+      }
+      let service = 'Raspi gateway online';
+      try {
+        const decoded = JSON.parse(raw) as { service?: unknown; status?: unknown };
+        service = String(decoded.service ?? decoded.status ?? service);
+      } catch {
+        // Plain response is still acceptable if HTTP 2xx.
+      }
+      return { status: 'online', message: service, url, checkedAt };
+    } catch (error) {
+      return {
+        status: 'offline',
+        message:
+          error instanceof Error && error.name === 'AbortError'
+            ? 'Health check timed out'
+            : error instanceof Error
+              ? error.message
+              : 'Health check failed',
+        url,
+        checkedAt,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async executeBoxAction(
@@ -287,92 +641,11 @@ export class IoService {
       };
     }
 
-    for (const entry of plan.devices) {
-      const outputPins = entry.outputs
-        .filter((output) => (action === 'off' ? true : output.state === 1))
-        .map((output) => output.pin);
-
-      if (outputPins.length === 0) {
-        continue;
-      }
-
-      const topicAction = action === 'off' ? 'off' : 'highlight';
-
-      try {
-        if (action === 'off') {
-          const payload: MqttOffPayload = {
-            command: 'off',
-            deviceId: entry.deviceId,
-            outputs: outputPins,
-          };
-          await this.mqttPublisher.publishOff(payload);
-          await this.logCommand({
-            userId,
-            deviceId: entry.deviceId,
-            action: IoCommandAction.Off,
-            topic: topicAction,
-            payload,
-            boxId: dto.boxId,
-            slotNo: dto.slotNo ?? null,
-            status: IoCommandStatus.Published,
-          });
-          this.highlightGateway.emitIoStatus({
-            topic: this.mqttConfig.offTopic(entry.deviceId),
-            payload,
-            deviceId: entry.deviceId,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          const payload: MqttHighlightPayload = {
-            command: 'highlight',
-            deviceId: entry.deviceId,
-            boxId: dto.boxId,
-            slotId: plan.location.slotId,
-            outputs: outputPins,
-          };
-          await this.mqttPublisher.publishHighlight(payload);
-          await this.logCommand({
-            userId,
-            deviceId: entry.deviceId,
-            action: IoCommandAction.Highlight,
-            topic: topicAction,
-            payload,
-            boxId: dto.boxId,
-            slotNo: dto.slotNo ?? null,
-            status: IoCommandStatus.Published,
-          });
-          this.highlightGateway.emitIoStatus({
-            topic: this.mqttConfig.highlightTopic(entry.deviceId),
-            payload,
-            deviceId: entry.deviceId,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'MQTT publish failed';
-
-        await this.logCommand({
-          userId,
-          deviceId: entry.deviceId,
-          action:
-            action === 'off' ? IoCommandAction.Off : IoCommandAction.Highlight,
-          topic: topicAction,
-          payload: {
-            command: action,
-            deviceId: entry.deviceId,
-            boxId: dto.boxId,
-            outputs: outputPins,
-          },
-          boxId: dto.boxId,
-          slotNo: dto.slotNo ?? null,
-          status: IoCommandStatus.Failed,
-          errorMessage: message,
-        });
-
-        throw new BadRequestException(message);
-      }
-    }
+    await this.executeIoPlan(action, plan, {
+      userId,
+      boxId: dto.boxId,
+      slotNo: dto.slotNo ?? null,
+    });
 
     return {
       status: 'success',

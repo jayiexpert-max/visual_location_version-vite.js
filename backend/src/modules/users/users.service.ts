@@ -1,9 +1,11 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { canAssignRole, canManageUser, type UserRole } from '@visual-location/shared';
 import {
   buildPaginatedResult,
   getPaginationSkip,
@@ -21,6 +23,7 @@ import { UserResponseDto } from './dto/user-response.dto';
 export interface UserActorContext {
   userId: number;
   username: string;
+  role: UserRole;
 }
 
 @Injectable()
@@ -58,6 +61,9 @@ export class UsersService {
     actor?: UserActorContext,
   ): Promise<UserResponseDto> {
     await this.assertUsernameAvailable(dto.username);
+    if (actor) {
+      this.assertCanAssignRole(actor.role, dto.role);
+    }
 
     const passwordHash = await bcrypt.hash(
       dto.password,
@@ -94,6 +100,9 @@ export class UsersService {
     actor?: UserActorContext,
   ): Promise<UserResponseDto> {
     const user = await this.requireUser(id);
+    if (actor) {
+      this.assertCanManageUser(actor.role, user.role);
+    }
 
     if (dto.username !== undefined && dto.username !== user.username) {
       await this.assertUsernameAvailable(dto.username, id);
@@ -107,7 +116,10 @@ export class UsersService {
       );
     }
 
-    if (dto.role !== undefined) {
+    if (dto.role !== undefined && dto.role !== user.role) {
+      if (actor) {
+        this.assertCanAssignRole(actor.role, dto.role);
+      }
       user.role = dto.role;
     }
 
@@ -121,6 +133,10 @@ export class UsersService {
 
     if (dto.remark !== undefined) {
       user.remark = dto.remark;
+    }
+
+    if (dto.isActive !== undefined) {
+      user.isActive = dto.isActive;
     }
 
     const saved = await this.userRepository.save(user);
@@ -144,6 +160,9 @@ export class UsersService {
 
   async remove(id: number, actor?: UserActorContext): Promise<void> {
     const user = await this.requireUser(id);
+    if (actor) {
+      this.assertCanManageUser(actor.role, user.role);
+    }
     await this.userRepository.remove(user);
 
     await this.auditService.log({
@@ -167,6 +186,24 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  private assertCanManageUser(actorRole: UserRole, targetUserRole: UserRole): void {
+    if (!canManageUser(actorRole, targetUserRole)) {
+      throw new ForbiddenException({
+        message: `Users with role "${targetUserRole}" cannot be modified by ${actorRole}`,
+        code: 'USER_MANAGE_FORBIDDEN',
+      });
+    }
+  }
+
+  private assertCanAssignRole(actorRole: UserRole, targetRole: UserRole): void {
+    if (!canAssignRole(actorRole, targetRole)) {
+      throw new ForbiddenException({
+        message: `Role "${targetRole}" cannot be assigned by ${actorRole}`,
+        code: 'ROLE_ASSIGN_FORBIDDEN',
+      });
+    }
   }
 
   private async assertUsernameAvailable(

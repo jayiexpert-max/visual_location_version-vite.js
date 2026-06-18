@@ -1,0 +1,189 @@
+/* :root removed — use pages-common.css aliases */
+
+
+        body {
+            padding: 0;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            color: var(--text-main);
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-light);
+            font-size: 0.9rem;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            font-family: inherit;
+            background: #f8fafc;
+        }
+
+        select:focus,
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button.btn-primary {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button.btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            text-decoration: none;
+            color: var(--text-light);
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .btn-back:hover {
+            color: var(--primary);
+        }
+
+        /* === Select2 Custom Styles for User Experience === */
+        .select2-container .select2-selection--single {
+            height: 48px !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 8px !important;
+            background-color: #f8fafc !important;
+            padding: 8px 12px !important;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 48px !important;
+            right: 10px !important;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 28px !important;
+            color: var(--text-main) !important;
+            padding-left: 0 !important;
+        }
+
+        .select2-container--default .select2-selection--single:focus {
+            border-color: var(--primary) !important;
+            background: white !important;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .select2-dropdown {
+            border: 1px solid var(--border) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+            overflow: hidden !important;
+            z-index: 1051;
+            /* fix modal overlay if any */
+        }
+
+        .select2-results__option {
+            padding: 10px 15px !important;
+            font-size: 0.95rem !important;
+        }
+
+        .select2-results__option--highlighted {
+            background-color: var(--primary) !important;
+        }
+
+        .select2-search__field {
+            border-radius: 6px !important;
+            padding: 8px !important;
+        }
+
+        /* Fix spacing below Select2 */
+        .select2-container {
+            margin-bottom: 20px !important;
+            display: block !important;
+            width: 100% !important;
+        }
+
+        /* Language Switcher Small */
+        .lang-switch-mini {
+            display: inline-flex;
+            gap: 5px;
+            font-size: 0.85rem;
+            margin-right: 15px;
+            align-items: center;
+        }
+
+        .lang-switch-mini a {
+            text-decoration: none;
+            color: #64748b;
+        }
+
+        .lang-switch-mini a.active {
+            color: var(--primary);
+            font-weight: 800;
+        }

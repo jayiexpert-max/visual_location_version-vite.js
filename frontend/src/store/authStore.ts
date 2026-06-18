@@ -14,6 +14,7 @@ interface AuthState {
     refreshToken: string,
     expiresIn: number,
     user: AuthUser,
+    deviceType?: 'desktop' | 'handheld' | 'tv',
   ) => void;
   setTokens: (accessToken: string, refreshToken: string, expiresIn: number) => void;
   setUser: (user: AuthUser) => void;
@@ -32,12 +33,13 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       deviceType: 'desktop',
 
-      setAuth: (accessToken, refreshToken, expiresIn, user) =>
+      setAuth: (accessToken, refreshToken, expiresIn, user, deviceType = 'desktop') =>
         set({
           accessToken,
           refreshToken,
           expiresAt: Date.now() + expiresIn * 1000,
           user,
+          deviceType,
         }),
 
       setTokens: (accessToken, refreshToken, expiresIn) =>
@@ -60,6 +62,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           expiresAt: null,
           user: null,
+          deviceType: 'desktop',
         }),
 
       isAuthenticated: () => {

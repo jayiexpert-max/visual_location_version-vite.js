@@ -23,10 +23,15 @@ npm-debug.log*
 !.vscode/settings.json.example
 *.swp
 .DS_Store
+**/.agent/
+**/.impeccable/
+**/.cursor/skills/
 
 # Test / coverage
 coverage/
 .nyc_output/
+__pycache__/
+*.pyc
 
 # Docker volumes (local)
 docker/data/
@@ -35,3 +40,4 @@ backups/
 # Misc
 *.pem
 .cache/
+scratch*.js

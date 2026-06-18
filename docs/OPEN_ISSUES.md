@@ -8,4 +8,4 @@
 | OI-04 | Pick audit | CPK picklist actions not yet in audit_logs | Medium | CPK server logs |
 | OI-05 | Password reset | Self-service password reset not implemented | Medium | Admin resets via Users page |
 
-Last updated: Phase 6 go-live preparation.
+Last updated: 2026-06-10 — see [PROJECT_PHASES.md](PROJECT_PHASES.md) for phase checklist.

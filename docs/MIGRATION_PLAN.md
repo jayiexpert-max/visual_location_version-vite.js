@@ -1,5 +1,7 @@
 # Migration Plan
 
+> **Current status (checkboxes, parity):** see **[PROJECT_PHASES.md](PROJECT_PHASES.md)** — update that file when completing work.
+
 ## Objective
 
 Rebuild Visual Inventory PHP into a production-ready enterprise application on local factory LAN.
@@ -35,54 +37,63 @@ TV / 3D / Handheld              │
 
 ## Phase plan
 
-### Phase 1 — Foundation ✅ (current)
+### Phase 1 — Foundation ✅
 
 - [x] Monorepo folder structure
 - [x] ER diagram, database schema, architecture docs
 - [x] Shared package (roles, RBAC, API routes)
 - [x] Docker compose (MySQL, Mosquitto)
 - [x] Additive SQL migrations
-- [ ] `npm install` + env configuration
-- [ ] Import PHP baseline schema
+- [x] `npm install` + env configuration (examples + root scripts)
+- [x] Baseline schema scripts (`npm run db:init`, `db:migrate`, `db:verify`)
 
-### Phase 2 — Core backend
+### Phase 2 — Core backend ✅
 
-- Config, database, health
-- Auth (JWT, shift logout, device types)
-- Users CRUD
-- Warehouse + box layout
-- PDService + CPK modules
-- Inventory (search, receive, return, highlight)
+- [x] Config, database, health
+- [x] Auth (JWT, shift logout, device types)
+- [x] Users CRUD
+- [x] Warehouse + box layout
+- [x] PDService + CPK modules
+- [x] Inventory (search, receive, return, highlight, lookup)
+- [x] Reservations enriched detail, Materials, Reports, WO BOM, Booking out
 
-### Phase 3 — Core frontend (menus 1–7, 10–12)
+### Phase 3 — Core frontend ✅
 
-- MUI theme + i18next TH/EN
-- Auth + role-gated routes
-- Dashboard, Search, Receive flows, Picklist, Rack, Expiry, Reports, Admin, Users
+- [x] MUI theme + i18next TH/EN
+- [x] Auth + role-gated routes
+- [x] Dashboard, Search, Receive flows, Picklist, Rack, Expiry, Reports, Admin, Users
+- [x] Factory UI + PHP dashboard card names (`mod_*`)
+- [x] Extra modules: Booking Out, WO Material Calc, Receive List, Io/Health admin
+- [ ] Full PHP UI parity for some flows — see [PROJECT_PHASES.md](PROJECT_PHASES.md) Track B
 
-### Phase 4 — Real-time + special displays
+### Phase 4 — Real-time + special displays ✅
 
-- Socket.IO gateway
-- TV Display migration
-- 3D Layout migration (Babylon.js)
+- [x] Socket.IO gateway
+- [x] TV Display migration
+- [x] 3D Layout migration (Babylon.js)
 
-### Phase 5 — MQTT IoT
+### Phase 5 — MQTT IoT ✅
 
-- NestJS MQTT publisher
-- Raspberry Pi MQTT subscriber (update from PHP `raspi/`)
-- `io_command_logs` audit
+- [x] NestJS MQTT publisher
+- [x] Raspberry Pi MQTT subscriber (`raspi-client/`)
+- [x] `io_command_logs` audit
 
-### Phase 6 — Handheld
+### Phase 6 — Handheld ⏳
 
-- HandheldLayout + 3 screens (menu, receive reservation, receive return)
-- 30-minute idle timeout
-- Exclude withdraw (legacy)
+- [ ] HandheldLayout + 3 screens (menu, receive reservation, receive return)
+- [ ] 30-minute idle timeout
+- [x] Exclude withdraw (legacy)
 
-### Phase 7 — QA & cutover
+Details: [PROJECT_PHASES.md — Track A Phase 6](PROJECT_PHASES.md#phase-6--handheld-)
 
-- Test against `docs/TEST_CHECKLIST_TH.md` from PHP project
-- Parallel run with PHP
-- Feature-flag cutover per menu
+### Phase 7 — QA & cutover ⏳
+
+- [ ] Test against `docs/TEST_CHECKLIST_TH.md` from PHP project
+- [ ] Parallel run with PHP
+- [ ] Feature-flag cutover per menu
+- [ ] Sign-off per [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md)
+
+Details: [PROJECT_PHASES.md — Track A Phase 7](PROJECT_PHASES.md#phase-7--qa--cutover-)
 
 ## Excluded from scope (legacy PHP)
 
@@ -113,4 +124,4 @@ TV / 3D / Handheld              │
 
 ## Approval
 
-Plan approved. Phase 1 structure generation complete.
+Plan approved. Phase 1–5 complete; Phase 6–7 and PHP parity — see [PROJECT_PHASES.md](PROJECT_PHASES.md).

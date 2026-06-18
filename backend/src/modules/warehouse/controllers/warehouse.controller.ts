@@ -12,7 +12,9 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { TvKiosk } from '../../../common/decorators/tv-kiosk.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
 import { BoxLayoutResponseDto } from '../dto/box-layout-response.dto';
 import { WarehouseHierarchyResponseDto } from '../dto/warehouse-hierarchy-response.dto';
 import { BoxLayoutService } from '../services/box-layout.service';
@@ -28,6 +30,8 @@ export class WarehouseController {
   ) {}
 
   @Get('hierarchy')
+  @Public()
+  @SkipThrottle()
   @TvKiosk()
   @ApiOperation({ summary: 'Get full warehouse rack/level/box/slot hierarchy' })
   getHierarchy(): Promise<WarehouseHierarchyResponseDto> {
@@ -48,6 +52,7 @@ export class WarehouseController {
   }
 
   @Get('boxes/:id/layout')
+  @SkipThrottle()
   @TvKiosk()
   @ApiOperation({ summary: 'Get box slot grid layout' })
   @ApiParam({ name: 'id', type: Number })

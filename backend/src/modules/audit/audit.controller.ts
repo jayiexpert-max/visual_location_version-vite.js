@@ -7,7 +7,7 @@ import { AuditService } from './audit.service';
 @ApiTags('audit')
 @ApiBearerAuth('access-token')
 @Controller('audit')
-@Roles('admin')
+@Roles('manage')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

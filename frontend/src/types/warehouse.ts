@@ -8,6 +8,7 @@ export interface HierarchySlot {
   id: number;
   slotNo: number;
   product?: HierarchyProduct | null;
+  puids?: string[];
 }
 
 export interface HierarchyBox {
@@ -41,6 +42,7 @@ export interface BoxLayoutCell {
   row: number;
   col: number;
   highlighted: boolean;
+  puids?: string[];
   product?: {
     id: number;
     name: string;

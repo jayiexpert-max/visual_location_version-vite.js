@@ -1,16 +1,14 @@
 export type ExpirationStatus = 'all' | 'expired' | 'soon' | 'normal' | 'all_stock';
 
 export interface ExpirationReportItem {
-  id: number;
+  id: string; // synthetic ID for DataGrid/React loop keys, maybe HanaPart+IM
   hanaPart: string | null;
   im: string | null;
   description?: string | null;
-  puid: string | null;
-  qtyRemain: number | null;
+  puidCount: number;
+  totalQty: number;
+  lotsRaw: string | null;
   expirationDate: string | null;
-  locShelf: string | null;
-  locLevel: string | null;
-  locBox: string | null;
   statusText?: string;
   daysLeft?: number;
 }
@@ -23,12 +21,16 @@ export interface ExpirationReportParams {
   page?: number;
   limit?: number;
   search?: string;
+  resNo?: string;
 }
 
-export function formatInventoryLocation(row: Pick<
-  ExpirationReportItem,
-  'locShelf' | 'locLevel' | 'locBox'
->): string {
+export interface InventoryLocationFields {
+  locShelf?: string | null;
+  locLevel?: string | number | null;
+  locBox?: string | null;
+}
+
+export function formatInventoryLocation(row: InventoryLocationFields): string {
   const parts = [
     row.locShelf ? `Rack ${row.locShelf}` : '',
     row.locLevel ? `L${row.locLevel}` : '',

@@ -3,8 +3,10 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { Roles } from '../../../common/decorators/roles.decorator';
 import { ReservationsService } from '../services/reservations.service';
 
 @ApiTags('reservations')
@@ -17,6 +19,16 @@ export class ReservationsController {
   @ApiOperation({ summary: 'List reservations from reservation_list' })
   list() {
     return this.reservationsService.list();
+  }
+
+  @Get(':resNo/detail')
+  @Roles('admin', 'manage', 'material_prep')
+  @ApiOperation({
+    summary: 'Fetch enriched reservation detail from CPK with local cross-reference',
+  })
+  @ApiParam({ name: 'resNo', type: String })
+  getDetail(@Param('resNo') resNo: string) {
+    return this.reservationsService.getEnrichedDetail(resNo);
   }
 
   @Get(':resNo')

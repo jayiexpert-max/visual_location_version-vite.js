@@ -1,6 +1,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import type { TFunction } from 'i18next';
 import type { ApiErrorResponse, ApiSuccessResponse } from '../types/api';
 import { useAuthStore } from '../store/authStore';
+import { redirectToLogin } from '../utils/authRedirect';
+import { translateApiMessage } from '../utils/translateApiMessage';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -28,6 +31,7 @@ async function refreshAccessToken(): Promise<string | null> {
     return data.data.accessToken;
   } catch {
     logout();
+    redirectToLogin(true);
     return null;
   }
 }
@@ -85,11 +89,15 @@ export async function apiDelete<T>(url: string): Promise<T> {
   return data.data;
 }
 
-export function getErrorMessage(error: unknown, fallback: string): string {
+export function getErrorMessage(error: unknown, fallback: string, t?: TFunction): string {
   if (axios.isAxiosError<ApiErrorResponse>(error)) {
     const msg = error.response?.data?.message;
-    if (typeof msg === 'string') return msg;
+    if (typeof msg === 'string' && msg.trim()) {
+      return t ? translateApiMessage(msg, t) : msg;
+    }
   }
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error && error.message.trim()) {
+    return t ? translateApiMessage(error.message, t) : error.message;
+  }
   return fallback;
 }

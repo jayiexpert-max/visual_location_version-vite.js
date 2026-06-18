@@ -1,0 +1,266 @@
+.users-page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.users-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.users-header-title h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--fx-text);
+  margin: 0;
+}
+
+.users-header-title p {
+  color: var(--fx-text-muted);
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+}
+
+.user-card {
+  background: var(--fx-surface);
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius-lg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  margin-bottom: 30px;
+  overflow: hidden;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.user-card-header {
+  background: var(--fx-bg);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--fx-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--fx-text);
+  font-size: 1.1rem;
+}
+
+.user-card-header i {
+  color: var(--fx-accent);
+}
+
+.user-card-content {
+  padding: 24px;
+}
+
+/* Form Styles */
+.user-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.user-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-form-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--fx-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-form-label i {
+  color: var(--fx-text-muted);
+}
+
+.user-form-input {
+  padding: 10px 14px;
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius);
+  background: var(--fx-surface);
+  color: var(--fx-text);
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.user-form-input:focus {
+  border-color: var(--fx-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.user-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fx-border);
+}
+
+/* Table Styles */
+.user-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-table th {
+  background: var(--fx-bg);
+  color: var(--fx-text-muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--fx-border);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.user-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--fx-border);
+  vertical-align: middle;
+  color: var(--fx-text);
+}
+
+.user-table tr:last-child td {
+  border-bottom: none;
+}
+
+.user-table tr:hover {
+  background: var(--fx-bg);
+}
+
+.user-table tr.editing {
+  background-color: rgba(245, 158, 11, 0.05);
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  background: #f1f5f9;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  color: #64748b;
+  font-size: 1.1rem;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.user-avatar--clickable {
+  cursor: zoom-in;
+  border: none;
+  padding: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.user-avatar--clickable:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px #93c5fd;
+}
+
+.user-avatar--clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.user-email {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fx-text-light);
+  font-size: 0.9rem;
+}
+
+.user-email i {
+  color: #cbd5e1;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.role-admin {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.role-material_prep {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.role-user {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.action-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+.action-btn-edit {
+  color: #3b82f6;
+}
+
+.action-btn-edit:hover {
+  background: #eff6ff;
+}
+
+.action-btn-delete {
+  color: #ef4444;
+}
+
+.action-btn-delete:hover {
+  background: #fef2f2;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

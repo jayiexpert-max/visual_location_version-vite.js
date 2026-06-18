@@ -1,30 +1,33 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloseIcon from '@mui/icons-material/Close';
-import SearchIcon from '@mui/icons-material/Search';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import {
   Box,
+  Button,
   CircularProgress,
   IconButton,
-  InputAdornment,
-  Link,
-  Paper,
-  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import type { WarehouseSceneHandle } from '../../components/layout3d/WarehouseScene';
 import { useSocketEvent } from '../../hooks/useSocket';
+import { searchResolve } from '../../services/inventoryService';
 import { getHierarchy, getBoxLayout } from '../../services/warehouseService';
-import { getSocket, SocketEvents } from '../../services/socketService';
+import { SocketEvents } from '../../services/socketService';
+import { getTvHighlight, type TvHighlight } from '../../services/tvService';
 import { useAuthStore } from '../../store/authStore';
 import type { BoxLayout } from '../../types/warehouse';
-import type { TvHighlight } from '../../services/tvService';
+import { speakKiosk } from '../../utils/kioskTts';
+import { useKioskAudio } from '../../hooks/useKioskAudio';
+import '../../styles/layout3d-kiosk.css';
 
 const AUDIO_KEY = 'layout_audio_enabled';
+const POLL_INTERVAL_MS = 2000;
 const COLORS = {
   bg: '#0f172a',
   primary: '#4f46e5',
@@ -32,186 +35,256 @@ const COLORS = {
   success: '#10b981',
 };
 
-function loadAudioEnabled(): boolean {
-  return localStorage.getItem(AUDIO_KEY) !== '0';
-}
-
 function speak(text: string, lang: string, enabled: boolean): void {
-  if (!enabled || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = lang === 'th' ? 'th-TH' : 'en-US';
-  utterance.rate = 0.95;
-  window.speechSynthesis.speak(utterance);
+  speakKiosk(text, lang, enabled);
 }
 
-function SlotGridPanel({
+function LocationPath({
+  rackName,
+  levelNo,
+  boxCode,
+  slotNo,
+  activeSlot,
+}: {
+  rackName: string;
+  levelNo: string | number;
+  boxCode: string;
+  slotNo?: string | number | null;
+  activeSlot?: boolean;
+}) {
+  const { t } = useTranslation('pages');
+
+  return (
+    <div className="layout3d-location-path">
+      <div className="layout3d-location-step">
+        <span className="layout3d-step-label">{t('layout3dRack')}:</span>
+        <span className="layout3d-step-val">{rackName}</span>
+      </div>
+      <div className="layout3d-location-step">
+        <span className="layout3d-step-label">{t('layout3dLevel')}:</span>
+        <span className="layout3d-step-val">{levelNo}</span>
+      </div>
+      <div className="layout3d-location-step">
+        <span className="layout3d-step-label">{t('layout3dBoxCode')}:</span>
+        <span className="layout3d-step-val">{boxCode}</span>
+      </div>
+      {slotNo != null && (
+        <div className="layout3d-location-step">
+          <span className="layout3d-step-label">{t('layout3dSlotNo')}:</span>
+          <span className={`layout3d-step-val${activeSlot ? ' active' : ''}`}>{slotNo}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BoxInfoPanel({
   layout,
+  highlight,
   onClose,
 }: {
   layout: BoxLayout;
+  highlight: TvHighlight | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation('pages');
 
-  const cellMap = new Map<string, (typeof layout.cells)[0]>();
-  for (const cell of layout.cells) {
-    cellMap.set(`${cell.row}-${cell.col}`, cell);
-  }
+  const highlightedCell = layout.cells.find((c) => c.highlighted);
+  const hasLiveHighlight =
+    Boolean(highlightedCell) ||
+    (highlight != null && highlight.boxId === layout.boxId);
+
+  const rackName = layout.rackName ?? '—';
+  const levelNo = layout.levelNo ?? '—';
+  const itemsCount = layout.cells.filter((c) => c.product).length;
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        position: 'absolute',
-        top: 80,
-        right: 16,
-        width: { xs: 'calc(100% - 32px)', sm: 360 },
-        maxHeight: 'calc(100vh - 100px)',
-        overflow: 'auto',
-        p: 2,
-        background: 'rgba(30, 41, 59, 0.82)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(148, 163, 184, 0.25)',
-        borderRadius: 2,
-        zIndex: 10,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1.5 }}>
-        <Box>
-          <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700 }}>
-            {layout.boxCode}
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-            {layout.rackName} · {t('locationView')} {layout.levelNo} · {layout.layout}
-          </Typography>
-        </Box>
-        <IconButton size="small" onClick={onClose} sx={{ color: '#94a3b8' }}>
-          <CloseIcon />
+    <div className="layout3d-info-panel active">
+      <div className="layout3d-panel-header">
+        <span>{layout.boxCode}</span>
+        <IconButton size="small" onClick={onClose} className="layout3d-panel-close" aria-label="close">
+          <CloseIcon fontSize="small" />
         </IconButton>
-      </Box>
+      </div>
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
-          gap: 0.75,
-        }}
-      >
-        {Array.from({ length: layout.rows }, (_, r) =>
-          Array.from({ length: layout.cols }, (_, c) => {
-            const cell = cellMap.get(`${r}-${c}`);
-            const highlighted = cell?.highlighted;
-            const occupied = Boolean(cell?.product);
-            return (
-              <Box
-                key={`${r}-${c}`}
-                sx={{
-                  minHeight: 52,
-                  p: 0.75,
-                  borderRadius: 1,
-                  border: highlighted ? `2px solid ${COLORS.highlight}` : '1px solid #475569',
-                  bgcolor: highlighted
-                    ? 'rgba(59, 130, 246, 0.25)'
-                    : occupied
-                      ? 'rgba(16, 185, 129, 0.18)'
-                      : 'rgba(15, 23, 42, 0.6)',
-                  boxShadow: highlighted ? `0 0 12px ${COLORS.highlight}55` : 'none',
-                }}
+      <div className="layout3d-panel-content">
+        {hasLiveHighlight ? (
+          <>
+            <div className="layout3d-product-highlight">
+              <div className="layout3d-highlight-title">{t('layout3dFoundProduct')}</div>
+              <div className="layout3d-product-name">
+                {highlight?.productName ?? highlightedCell?.product?.name ?? '—'}
+              </div>
+            </div>
+
+            {highlight?.puid?.trim() && (
+              <div className="layout3d-puid-highlight">
+                <div className="layout3d-highlight-title">{t('layout3dPuid')}</div>
+                <div className="layout3d-puid-val">{highlight.puid.trim()}</div>
+              </div>
+            )}
+
+            <LocationPath
+              rackName={highlight?.rackName ?? rackName}
+              levelNo={highlight?.levelNo ?? levelNo}
+              boxCode={highlight?.boxCode ?? layout.boxCode}
+              slotNo={highlightedCell?.slotNo ?? highlight?.slotNo ?? '—'}
+              activeSlot
+            />
+
+            <div className="layout3d-qty-box">
+              <span className="layout3d-qty-label">{t('layout3dQty')}</span>
+              <span
+                className={`layout3d-qty-val${
+                  (highlightedCell?.product?.qty ?? highlight?.qty ?? 0) === 0 ? ' zero' : ''
+                }`}
               >
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
-                  #{cell?.slotNo ?? '—'}
-                </Typography>
-                {cell?.product && (
-                  <Typography
-                    variant="caption"
-                    display="block"
-                    sx={{ color: '#e2e8f0', lineHeight: 1.2, mt: 0.25 }}
-                  >
-                    {cell.product.name}
-                  </Typography>
-                )}
-              </Box>
-            );
-          }),
+                {highlightedCell?.product?.qty ?? highlight?.qty ?? 0}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <LocationPath rackName={rackName} levelNo={levelNo} boxCode={layout.boxCode} />
+
+            <div className="layout3d-detail-row">
+              <span className="layout3d-detail-label">{t('layout3dLayoutConfig')}</span>
+              <span className="layout3d-detail-value">{layout.layout}</span>
+            </div>
+
+            <div className="layout3d-panel-divider" />
+
+            <div className="layout3d-detail-row">
+              <span className="layout3d-detail-label">{t('layout3dTotalItems')}</span>
+              <span className={`layout3d-detail-value${itemsCount > 0 ? ' ok' : ' empty'}`}>
+                {itemsCount} {t('layout3dStored')}
+              </span>
+            </div>
+          </>
         )}
-      </Box>
-    </Paper>
+      </div>
+    </div>
   );
 }
 
 export function Layout3dPage() {
-  const { t, i18n } = useTranslation(['pages', 'common']);
+  const { t, i18n } = useTranslation('pages');
   const [searchParams, setSearchParams] = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<WarehouseSceneHandle | null>(null);
+  const lastSeqRef = useRef<string | null>(null);
+
+  const tvKey = searchParams.get('tv_key') ?? import.meta.env.VITE_TV_KIOSK_KEY ?? undefined;
+  const langParam = searchParams.get('lang');
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const socketEnabled = Boolean(tvKey || accessToken);
+  const socketAuth = useMemo(
+    () => (tvKey ? { kioskKey: tvKey } : accessToken ? { token: accessToken } : undefined),
+    [accessToken, tvKey],
+  );
+  const { enabled: audioEnabled, toggle: toggleAudio } = useKioskAudio(
+    AUDIO_KEY,
+    i18n.language,
+    searchParams,
+    '3d',
+  );
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState(searchParams.get('search') ?? '');
-  const [audioEnabled, setAudioEnabled] = useState(loadAudioEnabled);
   const [boxLayout, setBoxLayout] = useState<BoxLayout | null>(null);
+  const [liveHighlight, setLiveHighlight] = useState<TvHighlight | null>(null);
   const [panelLoading, setPanelLoading] = useState(false);
 
-  const accessToken = useAuthStore((s) => s.accessToken);
-
-  const handleBoxClick = useCallback(async (boxId: number) => {
-    const handle = sceneRef.current;
-    if (!handle) return;
-
-    setPanelLoading(true);
-    try {
-      await handle.focusBox(boxId);
-      const layout = await getBoxLayout(boxId);
-      setBoxLayout(layout);
-    } catch {
-      setBoxLayout(null);
-    } finally {
-      setPanelLoading(false);
+  useEffect(() => {
+    if (langParam === 'th' || langParam === 'en') {
+      void i18n.changeLanguage(langParam);
     }
-  }, []);
+  }, [langParam, i18n]);
 
-  const handleHighlight = useCallback(
-    async (payload: TvHighlight) => {
-      const handle = sceneRef.current;
-      if (!handle || !payload?.boxId) return;
-
-      await handle.focusBox(payload.boxId, payload.slotId);
-      handle.applyHighlight(payload.boxId, payload.slotId);
-
-      if (payload.slotId) {
-        try {
-          const layout = await getBoxLayout(payload.boxId, payload.slotId);
-          setBoxLayout(layout);
-        } catch {
-          setBoxLayout(null);
+  const announceHighlight = useCallback(
+    (payload: TvHighlight) => {
+      if (payload.boxId) {
+        const isTh = i18n.language.startsWith('th');
+        const rack = payload.rackName ? `${isTh ? 'ชั้นวางที่ ' : 'Rack '}${payload.rackName}` : '';
+        const level = payload.levelNo != null ? `${isTh ? ' ชั้นที่ ' : ' Level '}${payload.levelNo}` : '';
+        const box = payload.boxCode ? `${isTh ? ' กล่อง ' : ' Box '}${payload.boxCode}` : '';
+        const slot = payload.slotNo != null ? `${isTh ? ' ช่องที่ ' : ' Slot '}${payload.slotNo}` : '';
+        
+        const textToSpeak = [rack, level, box, slot].filter(Boolean).join(', ');
+        
+        if (textToSpeak) {
+          speak(textToSpeak, i18n.language, audioEnabled);
         }
-      }
-
-      if (payload.productName) {
-        const rack = payload.rackName ?? '';
-        const level = payload.levelNo != null ? ` L${payload.levelNo}` : '';
-        const box = payload.boxCode ?? '';
-        speak(`${payload.productName}, ${rack}${level}, ${box}`, i18n.language, audioEnabled);
       }
     },
     [audioEnabled, i18n.language],
   );
 
-  useSocketEvent<TvHighlight>(SocketEvents.highlightUpdate, handleHighlight, Boolean(accessToken));
+  const handleHighlight = useCallback(
+    async (payload: TvHighlight | null) => {
+      const handle = sceneRef.current;
+      if (!payload?.boxId) {
+        setLiveHighlight(null);
+        setBoxLayout(null);
+        handle?.clearHighlight();
+        handle?.resetCamera();
+        return;
+      }
 
-  useEffect(() => {
-    if (accessToken) {
-      getSocket({ token: accessToken });
-    }
-  }, [accessToken]);
+      setLiveHighlight(payload);
+      if (!handle) return;
+
+      setPanelLoading(true);
+      await handle.applyTvHighlight({
+        productName: payload.productName,
+        puid: payload.puid,
+        rackName: payload.rackName,
+        levelNo: payload.levelNo,
+        boxCode: payload.boxCode,
+        boxId: payload.boxId,
+        slotId: payload.slotId,
+        slotNo: payload.slotNo,
+        qty: payload.qty,
+        highlightSeq: payload.highlightSeq,
+      });
+
+      if (payload.highlightSeq && payload.highlightSeq !== lastSeqRef.current) {
+        lastSeqRef.current = payload.highlightSeq;
+        announceHighlight(payload);
+      }
+    },
+    [announceHighlight],
+  );
+
+  useSocketEvent<TvHighlight>(
+    SocketEvents.highlightUpdate,
+    (payload) => {
+      void handleHighlight(payload);
+    },
+    socketEnabled,
+    socketAuth,
+  );
+
+  useSocketEvent<null>(
+    SocketEvents.highlightClear,
+    () => {
+      lastSeqRef.current = null;
+      setLiveHighlight(null);
+      setBoxLayout(null);
+      sceneRef.current?.clearHighlight();
+      sceneRef.current?.resetCamera();
+    },
+    socketEnabled,
+    socketAuth,
+  );
 
   useEffect(() => {
     let cancelled = false;
+    let localDispose: (() => void) | null = null;
 
     (async () => {
       try {
-        const hierarchy = await getHierarchy();
+        const hierarchy = await getHierarchy(tvKey);
         if (cancelled) return;
 
         const canvas = canvasRef.current;
@@ -220,7 +293,21 @@ export function Layout3dPage() {
         const { initScene, disposeScene } = await import(
           '../../components/layout3d/WarehouseScene'
         );
-        const handle = await initScene(canvas, hierarchy, { onBoxClick: handleBoxClick });
+        
+        if (cancelled) return;
+        localDispose = disposeScene;
+
+        const handle = await initScene(canvas, hierarchy, {
+          fetchBoxLayout: (boxId, slotId) => getBoxLayout(boxId, slotId, tvKey),
+          onBoxFocused: (_boxId, layout) => {
+            setBoxLayout(layout);
+            setPanelLoading(false);
+          },
+          onFocusCleared: () => {
+            setBoxLayout(null);
+            setPanelLoading(false);
+          },
+        });
         if (cancelled) {
           disposeScene();
           return;
@@ -229,7 +316,45 @@ export function Layout3dPage() {
 
         const initialSearch = searchParams.get('search') ?? '';
         if (initialSearch) {
-          handle.setSearchQuery(initialSearch);
+          const resolved = await searchResolve(initialSearch, tvKey);
+          if (!cancelled && resolved.status === 'success' && resolved.data) {
+            const d = resolved.data;
+            await handle.applyTvHighlight({
+              productName: d.hanaPart,
+              puid: d.puid || null,
+              boxId: d.boxId,
+              slotId: d.slotId,
+              slotNo: d.slotNo,
+              rackName: d.rackName,
+              levelNo: Number(d.levelNo) || null,
+              boxCode: d.boxCode,
+              qty: d.qty,
+              highlightSeq: `search-${initialSearch}`,
+            });
+          } else if (!cancelled) {
+            handle.setSearchQuery(initialSearch);
+          }
+        }
+
+        if (tvKey && !cancelled) {
+          const current = await getTvHighlight(tvKey);
+          if (current && !cancelled) {
+            lastSeqRef.current = current.highlightSeq;
+            setLiveHighlight(current);
+            await handle.applyTvHighlight({
+              productName: current.productName,
+              puid: current.puid,
+              boxId: current.boxId,
+              slotId: current.slotId,
+              slotNo: current.slotNo,
+              rackName: current.rackName,
+              levelNo: current.levelNo,
+              boxCode: current.boxCode,
+              qty: current.qty,
+              highlightSeq: current.highlightSeq,
+            });
+            announceHighlight(current);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -242,57 +367,58 @@ export function Layout3dPage() {
 
     return () => {
       cancelled = true;
-      void import('../../components/layout3d/WarehouseScene').then((m) => m.disposeScene());
+      if (localDispose) {
+        localDispose();
+      }
       sceneRef.current = null;
     };
-  }, [handleBoxClick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scene init once per kiosk key
+  }, [tvKey, announceHighlight]);
 
   useEffect(() => {
-    const q = search.trim();
-    const current = searchParams.get('search') ?? '';
-    if (q !== current) {
-      const next = new URLSearchParams(searchParams);
-      if (q) next.set('search', q);
-      else next.delete('search');
-      setSearchParams(next, { replace: true });
-    }
-    sceneRef.current?.setSearchQuery(q);
-  }, [search, searchParams, setSearchParams]);
+    if (!tvKey) return;
+    const interval = setInterval(() => {
+      void getTvHighlight(tvKey).then((current) => {
+        if (!current) {
+          if (liveHighlight) {
+            lastSeqRef.current = null;
+            void handleHighlight(null);
+          }
+          return;
+        }
+        if (current.highlightSeq !== lastSeqRef.current) {
+          void handleHighlight(current);
+        }
+      });
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [tvKey, handleHighlight, liveHighlight]);
 
-  const toggleAudio = () => {
-    const next = !audioEnabled;
-    setAudioEnabled(next);
-    localStorage.setItem(AUDIO_KEY, next ? '1' : '0');
+  const resetView = () => {
+    setBoxLayout(null);
+    sceneRef.current?.resetCamera();
+  };
+
+  const setLang = (_: React.MouseEvent<HTMLElement>, value: string | null) => {
+    if (!value || (value !== 'th' && value !== 'en')) return;
+    void i18n.changeLanguage(value);
+    const next = new URLSearchParams(searchParams);
+    next.set('lang', value);
+    setSearchParams(next, { replace: true });
   };
 
   return (
-    <Box
-      sx={{
-        position: 'fixed',
-        inset: 0,
-        bgcolor: COLORS.bg,
-        overflow: 'hidden',
-      }}
-    >
+    <div className="layout3d-page">
       <canvas
         ref={canvasRef}
         style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
       />
 
       {loading && (
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'rgba(15, 23, 42, 0.7)',
-            zIndex: 20,
-          }}
-        >
+        <div className="layout3d-loading">
           <CircularProgress sx={{ color: COLORS.primary }} />
-        </Box>
+          <span>{t('layout3dLoading')}</span>
+        </div>
       )}
 
       {error && (
@@ -310,70 +436,64 @@ export function Layout3dPage() {
         </Typography>
       )}
 
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          p: 1.5,
-          zIndex: 10,
-          background: 'linear-gradient(180deg, rgba(15,23,42,0.92) 0%, rgba(15,23,42,0) 100%)',
-        }}
-      >
-        <Link
-          component={RouterLink}
-          to="/app"
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.5,
-            color: '#cbd5e1',
-            textDecoration: 'none',
-            px: 1,
-            py: 0.5,
-            borderRadius: 1,
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' },
-          }}
-        >
-          <ArrowBackIcon fontSize="small" />
-          <Typography variant="body2">{t('common:back')}</Typography>
-        </Link>
+      {liveHighlight && (
+        <div className="layout3d-hl-banner">
+          {liveHighlight.productName ?? liveHighlight.boxCode}
+          {liveHighlight.puid ? ` · ${liveHighlight.puid}` : ''} — {liveHighlight.rackName} L
+          {liveHighlight.levelNo} · {liveHighlight.boxCode}
+        </div>
+      )}
 
-        <Typography variant="h6" sx={{ color: '#f1f5f9', fontWeight: 700, mr: 1, display: { xs: 'none', sm: 'block' } }}>
-          {t('pages:layout3dTitle')}
-        </Typography>
+      <div className="layout3d-toolbar">
+        <div className="layout3d-title-block">
+          <h1>{t('layout3dTitle')}</h1>
+          <p>{t('layout3dSubtitle')}</p>
+        </div>
 
-        <TextField
+        <span className={`layout3d-monitor-badge${socketEnabled ? '' : ' offline'}`}>
+          <span className="layout3d-monitor-dot" />
+          {socketEnabled ? t('layout3dMonitoring') : t('tvKioskKeyHint')}
+        </span>
+
+        <ToggleButtonGroup
           size="small"
-          placeholder={t('pages:searchByName')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={i18n.language.startsWith('th') ? 'th' : 'en'}
+          exclusive
+          onChange={setLang}
           sx={{
-            flex: 1,
-            maxWidth: 420,
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'rgba(30, 41, 59, 0.85)',
-              color: '#f1f5f9',
-              '& fieldset': { borderColor: 'rgba(148, 163, 184, 0.35)' },
+            '& .MuiToggleButton-root': {
+              color: '#94a3b8',
+              borderColor: '#475569',
+              px: 1.5,
+              py: 0.25,
+              fontSize: '0.75rem',
+              '&.Mui-selected': { bgcolor: COLORS.primary, color: '#fff' },
             },
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#94a3b8' }} />
-              </InputAdornment>
-            ),
-          }}
-        />
+        >
+          <ToggleButton value="th">TH</ToggleButton>
+          <ToggleButton value="en">EN</ToggleButton>
+        </ToggleButtonGroup>
 
-        <IconButton onClick={toggleAudio} sx={{ color: audioEnabled ? COLORS.success : '#64748b' }}>
-          {audioEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-        </IconButton>
-      </Box>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<MyLocationIcon />}
+          onClick={() => void resetView()}
+          sx={{ color: '#cbd5e1', borderColor: '#475569', display: { xs: 'none', md: 'inline-flex' } }}
+        >
+          {t('layout3dResetView')}
+        </Button>
+
+        <button
+          type="button"
+          className={`layout3d-sound-btn${audioEnabled ? ' active' : ''}`}
+          onClick={toggleAudio}
+        >
+          {audioEnabled ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
+          <span>{audioEnabled ? t('layout3dSoundActive') : t('layout3dSoundEnable')}</span>
+        </button>
+      </div>
 
       {panelLoading && !boxLayout && (
         <Box sx={{ position: 'absolute', top: 80, right: 16, zIndex: 10 }}>
@@ -382,8 +502,12 @@ export function Layout3dPage() {
       )}
 
       {boxLayout && (
-        <SlotGridPanel layout={boxLayout} onClose={() => setBoxLayout(null)} />
+        <BoxInfoPanel
+          layout={boxLayout}
+          highlight={liveHighlight}
+          onClose={() => setBoxLayout(null)}
+        />
       )}
-    </Box>
+    </div>
   );
 }

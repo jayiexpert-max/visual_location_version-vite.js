@@ -44,7 +44,7 @@ export class PdserviceClient {
     const base = this.configService
       .getOrThrow<string>('pdservice.baseUrl')
       .replace(/\/+$/, '');
-    return `${base}/PUIDCheck/${encodeURIComponent(puid)}`;
+    return `${base}/get_puidinfo/${encodeURIComponent(puid)}`;
   }
 
   async fetchPuid(puid: string): Promise<PdserviceFetchResult> {

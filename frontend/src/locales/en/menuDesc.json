@@ -1,0 +1,20 @@
+{
+  "search": "Find item location.",
+  "receiveReservation": "Inbound by RES.",
+  "receiveReturn": "Receive and store.",
+  "hanaPicklist": "Create picklist on HANA.",
+  "picklist": "Issue by picklist.",
+  "bookingOut": "Send to STORE/OTHER.",
+  "woMaterialCalc": "WO BOM vs stock.",
+  "rackOverview": "Rack and box map.",
+  "tvDisplay": "Live TV locations.",
+  "layout3d": "3D warehouse view.",
+  "abdulAi": "Ask stock questions.",
+  "stockReports": "Receipt/issue history.",
+  "expiryCheck": "Near/expired stock.",
+  "materials": "Materials and BOM.",
+  "userManagement": "User roles.",
+  "receiveList": "Search/export receipts.",
+  "systemAdmin": "Rack, box, master.",
+  "handheld": "Keyence BT-A500 scanner UI."
+}

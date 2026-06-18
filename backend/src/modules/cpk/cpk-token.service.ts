@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CpkHttpClient } from './cpk-http.client';
 import { CpkTokenRepository } from './cpk-token.repository';
@@ -28,12 +28,17 @@ export class CpkTokenService {
 
   requireMcIdConfigured(): void {
     if (!this.getMcId()) {
-      throw new Error(this.mcIdMissingMessage());
+      throw new ServiceUnavailableException({
+        message: this.mcIdMissingMessage(),
+        code: 'CPK_UNAVAILABLE',
+      });
     }
     if (!this.getStationKey()) {
-      throw new Error(
-        'CPK StationKey is not configured. Set CPK_STATION_KEY in .env.',
-      );
+      throw new ServiceUnavailableException({
+        message:
+          'CPK StationKey is not configured. Set CPK_STATION_KEY in .env.',
+        code: 'CPK_UNAVAILABLE',
+      });
     }
   }
 

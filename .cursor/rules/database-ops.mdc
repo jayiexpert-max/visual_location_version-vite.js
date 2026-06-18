@@ -1,0 +1,14 @@
+---
+description: Database migrations, backup, and factory ops
+globs: backend/database/**/*,scripts/**/*,docker-compose*.yml,docs/*.md
+alwaysApply: false
+---
+
+# Database & Operations
+
+- Apply migrations in order: `001_additive_phase1.sql` → `002_phase4_iot.sql` → `003_phase6_production.sql`.
+- Local MySQL (XAMPP): `/Applications/XAMPP/xamppfiles/bin/mysql -u root visual_inventory_db`.
+- Daily backup: `scripts/backup/backup.sh` (30-day retention). Restore: `scripts/backup/restore.sh <file.sql.gz>`.
+- Production stack: `docker compose -f docker-compose.production.yml up -d --build`.
+- Dev infra only: `cd backend/docker && docker compose up -d mysql redis mosquitto`.
+- Go-live checklist: `docs/GO_LIVE_CHECKLIST.md`. Recovery: `docs/RECOVERY.md`.

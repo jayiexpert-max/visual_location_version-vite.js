@@ -11,3 +11,7 @@ export async function ioOff(payload: { boxId: number }): Promise<unknown> {
 export async function ioReset(): Promise<unknown> {
   return apiPost('/io/reset', {});
 }
+
+export async function ioTestOutput(payload: { deviceId: number; pin: number; role?: string }): Promise<unknown> {
+  return apiPost('/io/test-output', payload);
+}

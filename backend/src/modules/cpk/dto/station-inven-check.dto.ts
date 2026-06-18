@@ -16,4 +16,8 @@ export class StationInvenCheckDto {
   @IsOptional()
   @IsString()
   PartNumber?: string;
+
+  @ApiPropertyOptional({ example: 7 })
+  @IsOptional()
+  NearExpiryDays?: number;
 }

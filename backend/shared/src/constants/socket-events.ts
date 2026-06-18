@@ -6,4 +6,6 @@ export const SocketEvents = {
   deviceOffline: 'device:offline',
   ioStatus: 'io:status',
   inventoryUpdate: 'inventory:update',
+  reservationUpdate: 'reservation:update',
+  picklistUpdate: 'picklist:update',
 } as const;

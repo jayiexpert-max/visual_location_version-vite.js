@@ -40,6 +40,7 @@ export class TvService {
 
     const saved = await this.tvHighlightRepository.saveHighlight({
       productName: dto.productName ?? null,
+      puid: dto.puid?.trim() || null,
       boxId: dto.boxId,
       slotId: dto.slotId ?? null,
       slotNo: Number.isFinite(slotNo) ? slotNo : null,
@@ -83,6 +84,7 @@ export class TvService {
   private toResponse(entity: {
     id: string;
     productName: string | null;
+    puid: string | null;
     boxId: number;
     slotId: number | null;
     slotNo: number | null;
@@ -99,6 +101,7 @@ export class TvService {
     return {
       id: entity.id,
       productName: entity.productName,
+      puid: entity.puid,
       boxId: entity.boxId,
       slotId: entity.slotId,
       slotNo: entity.slotNo,

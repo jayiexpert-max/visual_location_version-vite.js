@@ -1,12 +1,11 @@
+import SearchIcon from '@mui/icons-material/Search';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import WarehouseIcon from '@mui/icons-material/Warehouse';
 import {
-  Box,
   CircularProgress,
-  IconButton,
   ToggleButton,
   ToggleButtonGroup,
-  Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,38 +13,27 @@ import { useSearchParams } from 'react-router-dom';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { getHierarchy, getBoxLayout } from '../../services/warehouseService';
 import { getTvHighlight, type TvHighlight } from '../../services/tvService';
-import { getSocket, SocketEvents } from '../../services/socketService';
+import { SocketEvents } from '../../services/socketService';
+import { useAuthStore } from '../../store/authStore';
 import type { BoxLayout, HierarchyBox, HierarchyRack, WarehouseHierarchy } from '../../types/warehouse';
+import { speakKiosk } from '../../utils/kioskTts';
+import { useKioskAudio } from '../../hooks/useKioskAudio';
+import '../../styles/tv-display.css';
 
-const COLORS = {
-  bg: '#0f172a',
-  primary: '#4f46e5',
-  highlight: '#3b82f6',
-  success: '#10b981',
-  surface: '#1e293b',
-};
-
-const SOUND_KEY = 'tv_sound_enabled';
-const POLL_INTERVAL_MS = 5000;
+const TV_AUDIO_KEY = 'tv_audio_enabled';
+const POLL_INTERVAL_MS = 2000;
 
 function formatClock(date: Date): string {
   return date.toLocaleTimeString('en-GB', { hour12: false });
 }
 
-function loadSoundEnabled(searchParams: URLSearchParams): boolean {
-  const param = searchParams.get('sound');
-  if (param === '1' || param === 'true') return true;
-  if (param === '0' || param === 'false') return false;
-  return localStorage.getItem(SOUND_KEY) !== '0';
-}
-
-function speak(text: string, lang: string, enabled: boolean): void {
-  if (!enabled || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = lang === 'th' ? 'th-TH' : 'en-US';
-  utterance.rate = 0.9;
-  window.speechSynthesis.speak(utterance);
+function formatDate(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function boxOccupied(box: HierarchyBox): boolean {
@@ -65,114 +53,87 @@ function buildTvSlotGrid(layout: BoxLayout): Array<BoxLayout['cells'][0] | null>
   }
   for (let r = 0; r < layout.rows; r += 1) {
     for (let c = 0; c < layout.cols; c += 1) {
-      const idx = tvSlotIndex(r, c, layout.rows);
-      ordered[idx] = cellByPos.get(`${r}-${c}`) ?? null;
+      ordered[tvSlotIndex(r, c, layout.rows)] = cellByPos.get(`${r}-${c}`) ?? null;
     }
   }
   return ordered;
 }
 
-function RackGrid({
-  hierarchy,
-  highlight,
-}: {
-  hierarchy: WarehouseHierarchy;
-  highlight: TvHighlight | null;
-}) {
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: {
-          xs: 'repeat(2, 1fr)',
-          md: `repeat(${Math.min(hierarchy.racks.length, 5)}, 1fr)`,
-        },
-        gap: 2,
-        flex: 1,
-        overflow: 'auto',
-        pr: 1,
-      }}
-    >
-      {hierarchy.racks.map((rack) => (
-        <RackCard key={rack.id} rack={rack} highlight={highlight} />
-      ))}
-    </Box>
+function levelHasHighlight(
+  level: HierarchyRack['levels'][0],
+  highlight: TvHighlight | null,
+): boolean {
+  if (!highlight) return false;
+  if (highlight.levelNo != null && highlight.levelNo !== level.levelNo) return false;
+  
+  return level.boxes.some((box) =>
+    highlight.boxId ? highlight.boxId === box.id : highlight.boxCode === box.boxCode
   );
 }
 
-function RackCard({ rack, highlight }: { rack: HierarchyRack; highlight: TvHighlight | null }) {
-  const rackHighlighted = highlight?.rackName === rack.name;
+function RackGrid({
+  hierarchy,
+  highlight,
+  searchMode,
+}: {
+  hierarchy: WarehouseHierarchy;
+  highlight: TvHighlight | null;
+  searchMode: boolean;
+}) {
+  const { t } = useTranslation('pages');
+
+  const racks =
+    searchMode && highlight?.rackName
+      ? hierarchy.racks.filter((rack) => rack.name === highlight.rackName)
+      : hierarchy.racks;
 
   return (
-    <Box
-      sx={{
-        border: `2px solid ${rackHighlighted ? COLORS.highlight : '#334155'}`,
-        borderRadius: 2,
-        p: 1.5,
-        bgcolor: COLORS.surface,
-        boxShadow: rackHighlighted ? `0 0 20px ${COLORS.highlight}44` : 'none',
-        transition: 'border-color 0.3s, box-shadow 0.3s',
-      }}
-    >
-      <Typography
-        variant="subtitle1"
-        sx={{ color: '#f1f5f9', fontWeight: 700, mb: 1, textAlign: 'center' }}
-      >
-        {rack.name}
-      </Typography>
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-        {rack.levels.map((level) => (
-          <Box key={level.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <Typography
-              variant="caption"
-              sx={{ color: '#64748b', minWidth: 28, fontWeight: 600, textAlign: 'right' }}
-            >
-              L{level.levelNo}
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, flex: 1 }}>
-              {level.boxes.map((box) => {
-                const isBoxHighlight =
-                  highlight?.boxId === box.id ||
-                  (highlight?.boxCode != null && highlight.boxCode === box.boxCode);
-                const occupied = boxOccupied(box);
+    <>
+      <h2 className="tv-section-title">
+        <WarehouseIcon fontSize="small" />
+        {t('tvRackOverview')}
+      </h2>
+      <div className={`tv-rack-grid${searchMode ? ' search-mode' : ''}`}>
+        {racks.map((rack) => {
+          const rackActive = highlight?.rackName === rack.name;
+          return (
+            <div key={rack.id} className={`tv-rack${rackActive ? ' highlight-active' : ''}`}>
+              <div className="tv-rack-header">Rack: {rack.name}</div>
+              {rack.levels.map((level) => {
+                const levelActive = levelHasHighlight(level, highlight);
                 return (
-                  <Box
-                    key={box.id}
-                    title={box.boxCode}
-                    sx={{
-                      minWidth: 36,
-                      height: 28,
-                      px: 0.5,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 0.75,
-                      fontSize: '0.65rem',
-                      fontWeight: 700,
-                      color: isBoxHighlight ? '#fff' : occupied ? '#a7f3d0' : '#64748b',
-                      bgcolor: isBoxHighlight
-                        ? COLORS.highlight
-                        : occupied
-                          ? 'rgba(16, 185, 129, 0.22)'
-                          : 'rgba(15, 23, 42, 0.8)',
-                      border: isBoxHighlight ? `2px solid ${COLORS.highlight}` : '1px solid #475569',
-                      animation: isBoxHighlight ? 'tvPulse 1.4s ease-in-out infinite' : 'none',
-                      '@keyframes tvPulse': {
-                        '0%, 100%': { transform: 'scale(1)', boxShadow: `0 0 0 0 ${COLORS.highlight}66` },
-                        '50%': { transform: 'scale(1.06)', boxShadow: `0 0 14px 4px ${COLORS.highlight}55` },
-                      },
-                    }}
+                  <div
+                    key={level.id}
+                    className={`tv-level${levelActive ? ' highlight-active' : ''}`}
                   >
-                    {box.boxCode}
-                  </Box>
+                    <div className="tv-level-row">
+                      <span className="tv-level-label">L{level.levelNo}</span>
+                      <div className="tv-boxes">
+                        {level.boxes.map((box) => {
+                          const isBoxHighlight = highlight?.boxId
+                            ? highlight.boxId === box.id
+                            : highlight?.boxCode === box.boxCode && highlight?.levelNo === level.levelNo && highlight?.rackName === rack.name;
+                          const occupied = boxOccupied(box);
+                          const cls = [
+                            'tv-box',
+                            isBoxHighlight ? 'highlighted' : occupied ? 'occupied' : 'empty',
+                          ].join(' ');
+                          return (
+                            <div key={box.id} className={cls} title={box.boxCode}>
+                              {box.boxCode}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
-            </Box>
-          </Box>
-        ))}
-      </Box>
-    </Box>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -186,7 +147,6 @@ function DetailPanel({
   loading: boolean;
 }) {
   const { t } = useTranslation('pages');
-
   const orderedCells = useMemo(
     () => (layout ? buildTvSlotGrid(layout) : []),
     [layout],
@@ -194,114 +154,83 @@ function DetailPanel({
 
   if (!highlight) {
     return (
-      <Box
-        sx={{
-          width: { xs: '100%', lg: '40%' },
-          minWidth: { lg: 360 },
-          borderLeft: { lg: '1px solid #334155' },
-          borderTop: { xs: '1px solid #334155', lg: 'none' },
-          p: 3,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          bgcolor: 'rgba(30, 41, 59, 0.5)',
-        }}
-      >
-        <Typography variant="h5" sx={{ color: '#64748b', textAlign: 'center' }}>
-          {t('tvTitle')}
-        </Typography>
-      </Box>
+      <aside className="tv-detail">
+        <div className="tv-waiting">
+          <SearchIcon sx={{ fontSize: 48, opacity: 0.35, mb: 1 }} />
+          <div>{t('tvWaiting')}</div>
+        </div>
+      </aside>
     );
   }
 
   return (
-    <Box
-      sx={{
-        width: { xs: '100%', lg: '40%' },
-        minWidth: { lg: 360 },
-        borderLeft: { lg: '1px solid #334155' },
-        borderTop: { xs: '1px solid #334155', lg: 'none' },
-        p: 2.5,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-        overflow: 'auto',
-        bgcolor: 'rgba(30, 41, 59, 0.65)',
-      }}
-    >
-      <Box>
-        <Typography variant="overline" sx={{ color: COLORS.success, fontWeight: 700 }}>
-          {highlight.rackName} · L{highlight.levelNo}
-        </Typography>
-        <Typography variant="h4" sx={{ color: '#f8fafc', fontWeight: 700, lineHeight: 1.2 }}>
-          {highlight.productName ?? '—'}
-        </Typography>
-        <Typography variant="h6" sx={{ color: '#94a3b8', mt: 0.5 }}>
-          {highlight.boxCode} · {t('locationView')} {highlight.slotNo != null ? `#${highlight.slotNo}` : ''}
-        </Typography>
-        {highlight.qty > 0 && (
-          <Typography variant="body1" sx={{ color: '#cbd5e1', mt: 1 }}>
-            Qty: {highlight.qty}
-          </Typography>
-        )}
-        {highlight.searchedBy && (
-          <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5 }}>
-            {highlight.searchedBy}
-          </Typography>
-        )}
-      </Box>
+    <aside className="tv-detail">
+      <p style={{ color: '#10b981', fontWeight: 700, margin: '0 0 4px', fontSize: '0.75rem' }}>
+        {highlight.rackName} · L{highlight.levelNo}
+      </p>
+      <h3 style={{ margin: '0 0 8px', fontSize: '1.5rem', lineHeight: 1.2 }}>
+        {highlight.productName ?? '—'}
+      </h3>
+      <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: '1.1rem' }}>
+        {highlight.boxCode} · {t('locationView')}{' '}
+        {highlight.slotNo != null ? `#${highlight.slotNo}` : ''}
+      </p>
 
-      {loading && <CircularProgress size={32} sx={{ color: COLORS.highlight, alignSelf: 'center' }} />}
+      {highlight.puid && (
+        <div className="tv-detail-puid-bar">PUID: {highlight.puid}</div>
+      )}
+
+      {highlight.qty > 0 && (
+        <p style={{ margin: '0 0 8px', color: '#cbd5e1' }}>Qty: {highlight.qty}</p>
+      )}
+      {highlight.searchedBy && (
+        <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '0.8rem' }}>
+          {t('tvSearchedBy')}: {highlight.searchedBy}
+        </p>
+      )}
+
+      {loading && (
+        <div style={{ textAlign: 'center', padding: 16 }}>
+          <CircularProgress size={32} sx={{ color: '#3b82f6' }} />
+        </div>
+      )}
 
       {layout && !loading && (
-        <Box>
-          <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
-            {layout.layout}
-          </Typography>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
-              gap: 1,
-            }}
+        <>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: 8 }}>{layout.layout}</p>
+          <div
+            className="tv-slot-grid"
+            style={{ gridTemplateColumns: `repeat(${layout.cols}, 1fr)` }}
           >
             {orderedCells.map((cell, idx) => {
               const highlighted = cell?.highlighted;
               const occupied = Boolean(cell?.product);
+              const cls = [
+                'tv-slot-cell',
+                highlighted ? 'highlighted' : occupied ? 'occupied' : 'empty',
+              ].join(' ');
               return (
-                <Box
-                  key={cell?.slotId ?? `empty-${idx}`}
-                  sx={{
-                    minHeight: 64,
-                    p: 1,
-                    borderRadius: 1.5,
-                    border: highlighted ? `3px solid ${COLORS.highlight}` : '1px solid #475569',
-                    bgcolor: highlighted
-                      ? 'rgba(59, 130, 246, 0.3)'
-                      : occupied
-                        ? 'rgba(16, 185, 129, 0.2)'
-                        : 'rgba(15, 23, 42, 0.7)',
-                    boxShadow: highlighted ? `0 0 16px ${COLORS.highlight}66` : 'none',
-                  }}
-                >
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>
+                <div key={cell?.slotId ?? `empty-${idx}`} className={cls}>
+                  <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '0.75rem' }}>
                     #{cell?.slotNo ?? '—'}
-                  </Typography>
+                  </div>
                   {cell?.product && (
-                    <Typography
-                      variant="body2"
-                      sx={{ color: '#f1f5f9', fontWeight: 600, lineHeight: 1.25, mt: 0.25 }}
-                    >
+                    <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: '0.85rem', marginTop: 2 }}>
                       {cell.product.name}
-                    </Typography>
+                    </div>
                   )}
-                </Box>
+                  {cell?.puids?.map((puid) => (
+                    <div key={puid} className="tv-puid-chip">
+                      {puid}
+                    </div>
+                  ))}
+                </div>
               );
             })}
-          </Box>
-        </Box>
+          </div>
+        </>
       )}
-    </Box>
+    </aside>
   );
 }
 
@@ -309,18 +238,34 @@ export function TvDisplayPage() {
   const { t, i18n } = useTranslation(['pages', 'common']);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const tvKey = searchParams.get('tv_key') ?? undefined;
+  const tvKey = searchParams.get('tv_key') ?? import.meta.env.VITE_TV_KIOSK_KEY ?? undefined;
   const langParam = searchParams.get('lang');
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const liveEnabled = Boolean(tvKey || accessToken);
+  const socketAuth = useMemo(
+    () => (tvKey ? { kioskKey: tvKey } : accessToken ? { token: accessToken } : undefined),
+    [accessToken, tvKey],
+  );
+  const { enabled: soundEnabled, toggle: toggleSound } = useKioskAudio(
+    TV_AUDIO_KEY,
+    i18n.language,
+    searchParams,
+    'tv',
+    ['tv_sound_enabled'],
+  );
 
   const [clock, setClock] = useState(() => formatClock(new Date()));
+  const [today, setToday] = useState(() => formatDate(new Date()));
   const [hierarchy, setHierarchy] = useState<WarehouseHierarchy | null>(null);
   const [highlight, setHighlight] = useState<TvHighlight | null>(null);
   const [boxLayout, setBoxLayout] = useState<BoxLayout | null>(null);
   const [layoutLoading, setLayoutLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(() => loadSoundEnabled(searchParams));
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const lastSeqRef = useRef<string | null>(null);
+  const highlightRef = useRef<TvHighlight | null>(null);
+  highlightRef.current = highlight;
 
   const applyHighlight = useCallback(
     async (payload: TvHighlight | null) => {
@@ -342,12 +287,22 @@ export function TvDisplayPage() {
 
       if (payload.highlightSeq && payload.highlightSeq !== lastSeqRef.current) {
         lastSeqRef.current = payload.highlightSeq;
-        if (payload.productName) {
-          const rack = payload.rackName ?? '';
-          const level = payload.levelNo != null ? ` L${payload.levelNo}` : '';
-          const box = payload.boxCode ?? '';
-          const slot = payload.slotNo != null ? ` slot ${payload.slotNo}` : '';
-          speak(`${payload.productName}, ${rack}${level}, ${box}${slot}`, i18n.language, soundEnabled);
+        if (payload.boxId) {
+          const isTh = i18n.language.startsWith('th');
+          const rack = payload.rackName ? `${isTh ? 'ชั้นวางที่ ' : 'Rack '}${payload.rackName}` : '';
+          const level = payload.levelNo != null ? `${isTh ? ' ชั้นที่ ' : ' Level '}${payload.levelNo}` : '';
+          const box = payload.boxCode ? `${isTh ? ' กล่อง ' : ' Box '}${payload.boxCode}` : '';
+          const slot = payload.slotNo != null ? `${isTh ? ' ช่องที่ ' : ' Slot '}${payload.slotNo}` : '';
+          
+          const textToSpeak = [rack, level, box, slot].filter(Boolean).join(', ');
+          
+          if (textToSpeak) {
+            speakKiosk(
+              textToSpeak,
+              i18n.language,
+              soundEnabled,
+            );
+          }
         }
       }
     },
@@ -361,22 +316,19 @@ export function TvDisplayPage() {
   }, [langParam, i18n]);
 
   useEffect(() => {
-    const timer = setInterval(() => setClock(formatClock(new Date())), 1000);
+    const timer = setInterval(() => {
+      const now = new Date();
+      setClock(formatClock(now));
+      setToday(formatDate(now));
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (tvKey) {
-      getSocket({ kioskKey: tvKey });
-    }
-  }, [tvKey]);
-
   useSocketEvent<TvHighlight | null>(
     SocketEvents.highlightUpdate,
-    (payload) => {
-      void applyHighlight(payload);
-    },
-    Boolean(tvKey),
+    (payload) => void applyHighlight(payload),
+    liveEnabled,
+    socketAuth,
   );
 
   useSocketEvent<null>(
@@ -386,55 +338,73 @@ export function TvDisplayPage() {
       setHighlight(null);
       setBoxLayout(null);
     },
-    Boolean(tvKey),
+    liveEnabled,
+    socketAuth,
   );
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
-        const [hier, current] = await Promise.all([
-          getHierarchy(tvKey),
-          getTvHighlight(tvKey),
-        ]);
+        setLoadError(null);
+        const hier = await getHierarchy(tvKey);
         if (cancelled) return;
         setHierarchy(hier);
-        if (current) {
-          lastSeqRef.current = current.highlightSeq;
-          await applyHighlight(current);
+      } catch (err) {
+        if (!cancelled) {
+          setHierarchy(null);
+          setLoadError(err instanceof Error ? err.message : 'Failed to load warehouse data');
         }
-      } catch {
-        if (!cancelled) setHierarchy({ racks: [] });
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [tvKey, applyHighlight]);
+  }, [tvKey]);
 
   useEffect(() => {
-    if (!tvKey) return;
+    if (!liveEnabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const current = await getTvHighlight(tvKey);
+        if (cancelled || !current) return;
+        lastSeqRef.current = current.highlightSeq;
+        await applyHighlight(current);
+      } catch {
+        // poll/socket is primary; ignore transient highlight fetch errors
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tvKey, liveEnabled, applyHighlight]);
+
+  useEffect(() => {
+    if (!liveEnabled) return;
     const interval = setInterval(() => {
-      void getTvHighlight(tvKey).then((current) => {
-        if (!current) {
-          if (highlight) {
-            lastSeqRef.current = null;
-            setHighlight(null);
-            setBoxLayout(null);
+      void getTvHighlight(tvKey)
+        .then((current) => {
+          if (!current) {
+            if (highlightRef.current) {
+              lastSeqRef.current = null;
+              setHighlight(null);
+              setBoxLayout(null);
+            }
+            return;
           }
-          return;
-        }
-        if (current.highlightSeq !== lastSeqRef.current) {
-          void applyHighlight(current);
-        }
-      });
+          if (current.highlightSeq !== lastSeqRef.current) {
+            void applyHighlight(current);
+          }
+        })
+        .catch(() => {
+          // ignore rate-limit / network blips on background poll
+        });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [tvKey, applyHighlight]);
+  }, [tvKey, liveEnabled, applyHighlight]);
 
   const setLang = (_: React.MouseEvent<HTMLElement>, value: string | null) => {
     if (!value || (value !== 'th' && value !== 'en')) return;
@@ -444,41 +414,24 @@ export function TvDisplayPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const toggleSound = () => {
+  const toggleSoundWithUrl = () => {
+    toggleSound();
     const next = !soundEnabled;
-    setSoundEnabled(next);
-    localStorage.setItem(SOUND_KEY, next ? '1' : '0');
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('sound', next ? '1' : '0');
     setSearchParams(nextParams, { replace: true });
   };
 
-  return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        bgcolor: COLORS.bg,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 3,
-          py: 1.5,
-          borderBottom: '1px solid #334155',
-          bgcolor: 'rgba(15, 23, 42, 0.95)',
-        }}
-      >
-        <Typography variant="h5" sx={{ color: '#f1f5f9', fontWeight: 700 }}>
-          {t('pages:tvTitle')}
-        </Typography>
+  const searchMode = Boolean(highlight);
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+  return (
+    <div className="tv-page">
+      <header className="tv-header">
+        <div>
+          <h1 className="tv-header-title">{t('pages:tvTitle')}</h1>
+          <p className="tv-header-subtitle">{t('pages:tvSubtitle')}</p>
+        </div>
+        <div className="tv-header-controls">
           <ToggleButtonGroup
             size="small"
             value={i18n.language.startsWith('th') ? 'th' : 'en'}
@@ -486,83 +439,93 @@ export function TvDisplayPage() {
             onChange={setLang}
             sx={{
               '& .MuiToggleButton-root': {
-                color: '#94a3b8',
-                borderColor: '#475569',
+                color: 'rgba(255,255,255,0.85)',
+                borderColor: 'rgba(255,255,255,0.35)',
                 px: 2,
-                '&.Mui-selected': { bgcolor: COLORS.primary, color: '#fff' },
+                '&.Mui-selected': { bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' },
               },
             }}
           >
             <ToggleButton value="th">TH</ToggleButton>
             <ToggleButton value="en">EN</ToggleButton>
           </ToggleButtonGroup>
-
-          <IconButton onClick={toggleSound} sx={{ color: soundEnabled ? COLORS.success : '#64748b' }}>
-            {soundEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
-          </IconButton>
-
-          <Typography
-            variant="h4"
-            sx={{
-              color: '#f8fafc',
-              fontWeight: 700,
-              fontVariantNumeric: 'tabular-nums',
-              minWidth: 120,
-              textAlign: 'right',
-            }}
+          <button
+            type="button"
+            className={`tv-sound-btn${soundEnabled ? ' active' : ''}`}
+            onClick={toggleSoundWithUrl}
           >
-            {clock}
-          </Typography>
-        </Box>
-      </Box>
+            {soundEnabled ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
+            <span>{soundEnabled ? t('pages:tvSoundActive') : t('pages:tvSoundEnable')}</span>
+          </button>
+          <div className="tv-clock-block">
+            <div className="tv-date">{today}</div>
+            <div className="tv-clock">{clock}</div>
+          </div>
+        </div>
+      </header>
 
       {highlight && (
-        <Box
-          sx={{
-            px: 3,
-            py: 1.25,
-            background: `linear-gradient(90deg, ${COLORS.success} 0%, #059669 50%, ${COLORS.success} 100%)`,
-            animation: 'tvBannerGlow 2s ease-in-out infinite',
-            '@keyframes tvBannerGlow': {
-              '0%, 100%': { opacity: 1 },
-              '50%': { opacity: 0.88 },
-            },
-          }}
-        >
-          <Typography variant="h6" sx={{ color: '#fff', fontWeight: 700, textAlign: 'center' }}>
-            {t('pages:tvSearchAlert')}: {highlight.productName ?? highlight.boxCode} — {highlight.rackName}{' '}
-            L{highlight.levelNo} · {highlight.boxCode}
-            {highlight.slotNo != null ? ` #${highlight.slotNo}` : ''}
-          </Typography>
-        </Box>
+        <div className="tv-alert">
+          <div className="tv-alert-inner">
+            <div className="tv-alert-icon">🔍</div>
+            <div>
+              <p className="tv-alert-product">{t('pages:tvSearchAlert')}</p>
+              <p className="tv-alert-path">
+                {highlight.productName ?? highlight.boxCode} — {highlight.rackName} L
+                {highlight.levelNo} · {highlight.boxCode}
+                {highlight.slotNo != null ? ` #${highlight.slotNo}` : ''}
+              </p>
+              <p className="tv-alert-meta">
+                {highlight.puid && (
+                  <>
+                    <span className="tv-alert-puid">PUID {highlight.puid}</span>
+                    {' · '}
+                  </>
+                )}
+                {highlight.qty > 0 && <>Qty {highlight.qty} · </>}
+                {highlight.searchedBy && (
+                  <>
+                    {t('pages:tvSearchedBy')}: {highlight.searchedBy}
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: { xs: 'column', lg: 'row' },
-          overflow: 'hidden',
-          p: 2,
-          gap: 0,
-        }}
-      >
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, pr: { lg: 2 } }}>
+      <div className={`tv-body${searchMode ? ' search-mode' : ''}`}>
+        <div className="tv-main">
           {loading ? (
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CircularProgress sx={{ color: COLORS.primary }} />
-            </Box>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CircularProgress sx={{ color: '#4f46e5' }} />
+            </div>
+          ) : loadError ? (
+            <div className="tv-waiting">
+              <div style={{ color: '#f87171', marginBottom: 8 }}>{loadError}</div>
+              <div>{t('pages:tvLoadErrorHint')}</div>
+            </div>
+          ) : hierarchy && hierarchy.racks.length === 0 ? (
+            <div className="tv-waiting">
+              <WarehouseIcon sx={{ fontSize: 48, opacity: 0.35, mb: 1 }} />
+              <div>{t('pages:tvNoRacks')}</div>
+            </div>
           ) : hierarchy ? (
-            <RackGrid hierarchy={hierarchy} highlight={highlight} />
+            <RackGrid hierarchy={hierarchy} highlight={highlight} searchMode={searchMode} />
           ) : null}
+        </div>
+        {searchMode && (
+          <DetailPanel highlight={highlight} layout={boxLayout} loading={layoutLoading} />
+        )}
+      </div>
 
-          <Typography variant="caption" sx={{ color: '#475569', mt: 1, textAlign: 'center' }}>
-            {t('pages:tvAutoRefresh')}
-          </Typography>
-        </Box>
-
-        <DetailPanel highlight={highlight} layout={boxLayout} loading={layoutLoading} />
-      </Box>
-    </Box>
+      <footer className="tv-status-bar">
+        <div className="tv-status-live">
+          <span className={`tv-status-dot${liveEnabled ? '' : ' offline'}`} />
+          <span>{liveEnabled ? t('pages:tvStatusLive') : t('pages:tvKioskKeyHint')}</span>
+        </div>
+        <span>{t('pages:tvAutoRefresh')}</span>
+      </footer>
+    </div>
   );
 }

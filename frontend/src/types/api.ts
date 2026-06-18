@@ -28,6 +28,7 @@ export interface AuthUser {
   email: string | null;
   remark: string | null;
   createdAt: string;
+  isActive: boolean;
 }
 
 export interface AuthTokens {

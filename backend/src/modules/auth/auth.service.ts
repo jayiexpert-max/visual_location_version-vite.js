@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -23,6 +24,7 @@ import { RefreshTokenRepository } from './repositories/refresh-token.repository'
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { CpkTokenService } from '../cpk/cpk-token.service';
 
 interface AccessTokenPayload {
   sub: number;
@@ -46,6 +48,7 @@ export interface AuthRequestContext {
 @Injectable()
 export class AuthService {
   private static readonly SHIFT_LOGOUT_CODE = 'SHIFT_LOGOUT_REQUIRED';
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private readonly userRepository: UserRepository,
@@ -53,6 +56,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
+    private readonly cpkTokenService: CpkTokenService,
   ) {}
 
   async login(
@@ -124,7 +128,23 @@ export class AuthService {
       details: { deviceType: dto.deviceType },
     });
 
+    this.prewarmCpkPublicUid();
+
     return response;
+  }
+
+  /** Non-blocking — mirrors PHP cpk_clear_public_uid_cache + cpk_prewarm_public_uid on login. */
+  private prewarmCpkPublicUid(): void {
+    void (async () => {
+      try {
+        await this.cpkTokenService.clearCache();
+        await this.cpkTokenService.getPublicUid(true);
+      } catch (err) {
+        this.logger.debug(
+          `CPK prewarm after login skipped: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    })();
   }
 
   async refresh(refreshToken: string): Promise<AuthResponseDto> {

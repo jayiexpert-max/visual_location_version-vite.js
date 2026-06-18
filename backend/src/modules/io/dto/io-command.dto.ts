@@ -28,3 +28,19 @@ export class IoCommandResultDto {
   @ApiPropertyOptional()
   pinCount?: number;
 }
+
+export class IoTestOutputDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  deviceId: number;
+
+  @ApiProperty({ example: 8 })
+  @IsInt()
+  @Min(1)
+  pin: number;
+
+  @ApiPropertyOptional({ example: 'box' })
+  @IsOptional()
+  role?: string;
+}

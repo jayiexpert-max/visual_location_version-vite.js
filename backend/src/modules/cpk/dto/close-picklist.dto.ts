@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class ClosePicklistDto {
   @ApiProperty({ example: 'PL2024001' })
@@ -11,4 +11,10 @@ export class ClosePicklistDto {
   @IsString()
   @IsNotEmpty()
   operator: string;
+
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  kitsNote?: string;
 }

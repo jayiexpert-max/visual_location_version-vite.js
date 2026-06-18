@@ -23,6 +23,9 @@ export class UserResponseDto {
   @ApiPropertyOptional({ example: 'Warehouse supervisor', nullable: true })
   remark!: string | null;
 
+  @ApiProperty({ example: true })
+  isActive!: boolean;
+
   static fromEntity(user: User): UserResponseDto {
     return {
       id: user.id,
@@ -32,6 +35,7 @@ export class UserResponseDto {
       createdAt: user.createdAt,
       email: user.email,
       remark: user.remark,
+      isActive: Boolean(user.isActive),
     };
   }
 }

@@ -1,17 +1,20 @@
 import { useEffect } from 'react';
-import { getSocket } from '../services/socketService';
+import { getSocket, type SocketAuth } from '../services/socketService';
 
 export function useSocketEvent<T>(
   event: string,
   handler: (payload: T) => void,
   enabled = true,
+  auth?: SocketAuth,
 ) {
+  const authKey = auth?.token ?? auth?.kioskKey ?? '';
+
   useEffect(() => {
-    if (!enabled) return;
-    const socket = getSocket();
+    if (!enabled || !authKey) return;
+    const socket = getSocket(auth);
     socket.on(event, handler);
     return () => {
       socket.off(event, handler);
     };
-  }, [event, handler, enabled]);
+  }, [auth, authKey, enabled, event, handler]);
 }

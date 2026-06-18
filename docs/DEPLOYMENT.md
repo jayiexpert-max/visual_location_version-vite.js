@@ -133,7 +133,19 @@ VITE_SOCKET_URL=http://192.168.1.10:3000
 ```bash
 npm run build
 # ผลลัพธ์ใน dist/ — นำไปวางบน nginx หรือใช้ Docker
+# รวม plugins/ (fonts + Font Awesome) สำหรับ offline — ไม่ต้องมี internet
 ```
+
+### Offline assets (ฟอนต์ + ไอคอน)
+
+โฟลเดอร์ `frontend/public/plugins/` มีฟอนต์ Outfit/Sarabun และ Font Awesome แบบ self-hosted (เหมือน PHP) — ถูก copy ไป `dist/plugins/` ตอน build อัตโนมัติ
+
+ซิงก์จาก PHP เมื่อมีการอัปเดต:
+
+```bash
+npm run sync:offline-assets
+```
+
 
 ### รันด้วย Docker
 

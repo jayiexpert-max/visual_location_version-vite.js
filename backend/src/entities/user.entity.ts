@@ -11,6 +11,7 @@ import { IoCommandLog } from './io-command-log.entity';
 
 export enum UserRole {
   Admin = 'admin',
+  Manage = 'manage',
   User = 'user',
   MaterialPrep = 'material_prep',
 }
@@ -55,6 +56,9 @@ export class User {
 
   @Column({ name: 'remark', type: 'text', nullable: true })
   remark: string | null;
+
+  @Column({ name: 'is_active', type: 'tinyint', default: 1 })
+  isActive: boolean;
 
   @Column({ name: 'failed_login_attempts', type: 'int', unsigned: true, default: 0 })
   failedLoginAttempts: number;

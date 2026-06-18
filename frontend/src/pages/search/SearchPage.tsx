@@ -1,376 +1,382 @@
-import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import PlaceIcon from '@mui/icons-material/Place';
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  IconButton,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import {
-  DataGrid,
-  type GridColDef,
-  type GridRenderCellParams,
-} from '@mui/x-data-grid';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
-import { ScanInput } from '../../components/common/ScanInput';
-import { PageHeader } from '../../components/layout/PageHeader';
 import * as inventoryService from '../../services/inventoryService';
 import * as ioService from '../../services/ioService';
+import * as tvService from '../../services/tvService';
+import * as warehouseService from '../../services/warehouseService';
 import { getErrorMessage } from '../../services/apiClient';
-import type { InventoryLocation, InventoryReceive } from '../../types/inventory';
-import { formatLocationLabel } from '../shared/locationOptions';
-
-type SearchTab = 'part' | 'name' | 'barcode' | 'location';
-
-interface SearchRow {
-  id: string;
-  partNumber: string;
-  description: string;
-  qty: number;
-  lot: string;
-  expiry: string;
-  location: string;
-  rackId?: number;
-  boxId?: number;
-  slotId?: number;
-  slotNo?: number;
-  rackName?: string;
-  levelNo?: number;
-  boxCode?: string;
-  productName?: string;
-}
-
-function readRecordField(record: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key];
-    if (value !== undefined && value !== null && String(value).trim()) {
-      return String(value).trim();
-    }
-  }
-  return '';
-}
-
-function readRecordNumber(record: Record<string, unknown>, ...keys: string[]): number {
-  for (const key of keys) {
-    const value = record[key];
-    if (value !== undefined && value !== null && value !== '') {
-      const parsed = Number(value);
-      if (!Number.isNaN(parsed)) return parsed;
-    }
-  }
-  return 0;
-}
-
-function receiveToRow(record: InventoryReceive, index: number): SearchRow {
-  const raw = record as InventoryReceive & Record<string, unknown>;
-  const partNumber = readRecordField(raw, 'hanaPart', 'HanaPart');
-  const description = readRecordField(raw, 'description', 'Description');
-  const qty = readRecordNumber(raw, 'qtyRemain', 'QtyRemain');
-  const lot = readRecordField(raw, 'lotNo', 'LotNo');
-  const expiryRaw = readRecordField(raw, 'expirationDate', 'ExpirationDate');
-  const locShelf = readRecordField(raw, 'locShelf', 'LocShelf');
-  const locLevel = readRecordField(raw, 'locLevel', 'LocLevel');
-  const locBox = readRecordField(raw, 'locBox', 'LocBox');
-  const puid = readRecordField(raw, 'puid', 'PUID');
-
-  return {
-    id: `recv-${raw.id ?? index}-${puid || index}`,
-    partNumber,
-    description,
-    qty,
-    lot: lot || '—',
-    expiry: expiryRaw ? format(new Date(expiryRaw), 'yyyy-MM-dd') : '—',
-    location: [locShelf, locLevel, locBox].filter(Boolean).join(' / ') || '—',
-    productName: partNumber,
-  };
-}
-
-function locationToRow(record: InventoryLocation, index: number): SearchRow {
-  return {
-    id: `loc-${record.slot_id}-${index}`,
-    partNumber: record.part_name,
-    description: record.product_remark ?? record.part_name,
-    qty: record.current_qty,
-    lot: '—',
-    expiry: record.earliest_expiration
-      ? format(new Date(record.earliest_expiration), 'yyyy-MM-dd')
-      : '—',
-    location: formatLocationLabel(
-      record.rack_name,
-      record.level_no,
-      record.box_code,
-      record.slot_no,
-    ),
-    rackId: record.rack_id,
-    boxId: record.box_id,
-    slotId: record.slot_id,
-    slotNo: record.slot_no,
-    rackName: record.rack_name,
-    levelNo: record.level_no,
-    boxCode: record.box_code,
-    productName: record.part_name,
-  };
-}
-
-function buildRows(
-  tab: SearchTab,
-  data: Awaited<ReturnType<typeof inventoryService.searchInventory>> | undefined,
-): SearchRow[] {
-  if (!data) return [];
-
-  if (tab === 'barcode') {
-    return data.puidMatches.map(receiveToRow);
-  }
-
-  if (tab === 'part') {
-    const rows = [
-      ...data.hanaPartMatches.map(receiveToRow),
-      ...data.locations.map(locationToRow),
-    ];
-    return rows.filter(
-      (row, index, array) => array.findIndex((item) => item.id === row.id) === index,
-    );
-  }
-
-  if (tab === 'name') {
-    return data.locations
-      .filter(
-        (loc) =>
-          loc.part_name.toLowerCase().includes(data.query.toLowerCase()) ||
-          (loc.product_remark ?? '').toLowerCase().includes(data.query.toLowerCase()),
-      )
-      .map(locationToRow);
-  }
-
-  const query = data.query.toLowerCase();
-  return data.locations
-    .filter((loc) => {
-      const locationText = formatLocationLabel(
-        loc.rack_name,
-        loc.level_no,
-        loc.box_code,
-        loc.slot_no,
-      ).toLowerCase();
-      return (
-        locationText.includes(query) ||
-        loc.rack_name.toLowerCase().includes(query) ||
-        loc.box_code.toLowerCase().includes(query)
-      );
-    })
-    .map(locationToRow);
-}
+import { normalizePuidInput } from '../../utils/reservationUtils';
+import { arrangeSlotsByLayout, rackSlotGridCols } from '../../utils/rackSlotLayout';
+import type { BoxLayout, WarehouseHierarchy } from '../../types/warehouse';
+import { useSocketEvent } from '../../hooks/useSocket';
+import { SocketEvents } from '../../services/socketService';
+import { useAuthStore } from '../../store/authStore';
 
 export function SearchPage() {
   const { t } = useTranslation(['pages', 'common']);
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<SearchTab>('part');
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const [query, setQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [result, setResult] = useState<inventoryService.SearchResolveData | null>(null);
+  const [message, setMessage] = useState<{ kind: 'success' | 'warning'; html: string } | null>(
+    null,
+  );
 
-  const searchQuery = useQuery({
-    queryKey: ['inventory-search', submittedQuery],
-    queryFn: () => inventoryService.searchInventory(submittedQuery),
-    enabled: submittedQuery.length > 0,
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalHighlightSlotId, setModalHighlightSlotId] = useState(0);
+  const [modalLayout, setModalLayout] = useState<BoxLayout | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const hierarchyQuery = useQuery({
+    queryKey: ['warehouse-hierarchy', 'search'],
+    queryFn: () => warehouseService.getHierarchy(),
   });
 
-  const highlightMutation = useMutation({
-    mutationFn: async (row: SearchRow) => {
-      if (!row.boxId || !row.slotId) {
-        throw new Error(t('common:noData'));
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const buildSuccessMessage = useCallback(
+    (data: inventoryService.SearchResolveData) => {
+      const locationLine = `📦 Rack: <b>${data.rackName}</b> → Level: <b>${data.levelNo}</b> → Box: <b>${data.boxCode}</b> → Slot: <b>${data.slotNo}</b>`;
+      if (data.searchMode === 'puid') {
+        return `🔍 ${t('pages:searchPuidFound')}: <b>"${data.puid}"</b><br>
+          HanaPart: <b>${data.hanaPart}</b><br>
+          ${locationLine}<br>
+          ${t('pages:searchQtyRemain')}: <b>${data.qty}</b>`;
       }
-      await ioService.ioHighlight({ boxId: row.boxId, slotNo: row.slotNo });
-      await inventoryService.highlightLocation({
-        productName: row.productName,
-        boxId: row.boxId,
-        slotId: row.slotId,
-        slotNo: row.slotNo,
-        rackName: row.rackName,
-        levelNo: row.levelNo,
-        boxCode: row.boxCode,
-        qty: row.qty,
+      return `🔍 ${t('pages:searchProductFound')} <b>"${data.hanaPart}"</b><br>
+        ${locationLine}<br>
+        ${t('pages:searchQtyRemain')}: <b>${data.qty}</b>`;
+    },
+    [t],
+  );
+
+  const searchMutation = useMutation({
+    mutationFn: async (term: string) => {
+      const response = await inventoryService.searchResolve(term);
+      if (response.status !== 'success' || !response.data) {
+        throw new Error(response.message ?? t('common:error'));
+      }
+      return response.data;
+    },
+    onSuccess: async (data) => {
+      setResult(data);
+      setMessage({ kind: 'success', html: buildSuccessMessage(data) });
+
+      // Push highlight directly to TV with the already-resolved location data.
+      // Avoid re-resolving via /inventory/highlight which may fail silently
+      // if the product is not in v_inventory_location.
+      try {
+        await tvService.setTvHighlight({
+          productName: data.hanaPart,
+          puid: data.puid || undefined,
+          boxId: data.boxId,
+          slotId: data.slotId || undefined,
+          slotNo: data.slotNo || undefined,
+          rackName: data.rackName,
+          levelNo: data.levelNo,
+          boxCode: data.boxCode,
+          qty: data.qty,
+          actionType: 'highlight',
+        });
+      } catch {
+        // non-fatal — location still shown on rack map
+      }
+
+      try {
+        await ioService.ioHighlight({ boxId: data.boxId, slotNo: data.slotNo });
+      } catch {
+        // non-fatal — IO light control optional
+      }
+    },
+    onError: (err, term) => {
+      setResult(null);
+      const msg = getErrorMessage(err, t('common:error'), t);
+      setMessage({
+        kind: 'warning',
+        html: `❌ ${t('pages:searchNotFound')}: <b>"${term}"</b> (${t('pages:searchNotFoundHint')})<br><small>${msg}</small>`,
       });
-    },
-    onSuccess: () => {
-      setActionError(null);
-      setActionSuccess(t('common:success'));
-    },
-    onError: (error) => {
-      setActionSuccess(null);
-      setActionError(getErrorMessage(error, t('common:error')));
     },
   });
 
-  const rows = useMemo(() => buildRows(tab, searchQuery.data), [tab, searchQuery.data]);
-
-  const handleSearch = () => {
-    const trimmed = query.trim();
-    setSubmittedQuery(trimmed);
-    setActionError(null);
-    setActionSuccess(null);
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const term = normalizePuidInput(query);
+    if (!term || searchMutation.isPending) return;
+    setQuery(term);
+    setMessage(null);
+    searchMutation.mutate(term);
   };
 
-  const handleOpenLocation = useCallback(
-    (row: SearchRow) => {
-      navigate('/app/rack', {
-        state: {
-          rackId: row.rackId,
-          boxId: row.boxId,
-          slotId: row.slotId,
-          highlightSlotId: row.slotId,
-        },
-      });
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const socketAuth = useMemo(
+    () => (accessToken ? { token: accessToken } : undefined),
+    [accessToken],
+  );
+
+  const clearStateLocally = useCallback(() => {
+    setQuery('');
+    setResult(null);
+    setMessage(null);
+    setModalOpen(false);
+    inputRef.current?.focus();
+  }, []);
+
+  useSocketEvent<null>(
+    SocketEvents.highlightClear,
+    () => {
+      clearStateLocally();
     },
-    [navigate],
+    Boolean(accessToken),
+    socketAuth,
   );
 
-  const columns = useMemo<GridColDef<SearchRow>[]>(
-    () => [
-      { field: 'partNumber', headerName: t('common:partNumber'), flex: 1, minWidth: 140 },
-      { field: 'description', headerName: t('common:description'), flex: 1.2, minWidth: 180 },
-      { field: 'qty', headerName: t('common:quantity'), width: 100, type: 'number' },
-      { field: 'lot', headerName: t('common:lotNumber'), width: 120 },
-      { field: 'expiry', headerName: t('common:expiryDate'), width: 130 },
-      { field: 'location', headerName: t('common:location'), flex: 1.2, minWidth: 200 },
-      {
-        field: 'actions',
-        headerName: t('common:actions'),
-        width: 130,
-        sortable: false,
-        filterable: false,
-        renderCell: (params: GridRenderCellParams<SearchRow>) => (
-          <Stack direction="row" spacing={0.5}>
-            <Tooltip title={t('common:openLocation')}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={!params.row.slotId}
-                  onClick={() => handleOpenLocation(params.row)}
-                >
-                  <PlaceIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title={t('common:triggerLight')}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={!params.row.boxId || highlightMutation.isPending}
-                  onClick={() => highlightMutation.mutate(params.row)}
-                >
-                  <LightbulbIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Stack>
-        ),
-      },
-    ],
-    [t, highlightMutation.isPending, handleOpenLocation],
-  );
-
-  const tabLabels: Record<SearchTab, string> = {
-    part: t('pages:searchByPart'),
-    name: t('pages:searchByName'),
-    barcode: t('pages:searchByBarcode'),
-    location: t('pages:searchByLocation'),
+  const handleClear = async () => {
+    clearStateLocally();
+    try {
+      await tvService.clearTvHighlight();
+    } catch {
+      // ignore
+    }
+    try {
+      await ioService.ioReset();
+    } catch {
+      // ignore
+    }
   };
+
+  const handleResetLights = async () => {
+    try {
+      await ioService.ioReset();
+    } catch {
+      // ignore
+    }
+  };
+
+  const openBoxModal = async (boxId: number, highlightSlotId: number) => {
+    setModalHighlightSlotId(highlightSlotId);
+    setModalOpen(true);
+    setModalLoading(true);
+    setModalError(null);
+    setModalLayout(null);
+
+    try {
+      const layout = await warehouseService.getBoxLayout(
+        boxId,
+        highlightSlotId > 0 ? highlightSlotId : undefined,
+      );
+      setModalLayout(layout);
+    } catch (err) {
+      setModalError(getErrorMessage(err, t('common:error'), t));
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalLayout(null);
+    setModalError(null);
+  };
+
+  const hierarchy = hierarchyQuery.data;
+  const highlightBoxId = result?.boxId ?? 0;
+  const highlightSlotId = result?.slotId ?? 0;
+
+  const modalCells = useMemo(() => {
+    if (!modalLayout) return [];
+    const sorted = [...modalLayout.cells].sort((a, b) => a.slotNo - b.slotNo);
+    return arrangeSlotsByLayout(sorted, modalLayout.layout);
+  }, [modalLayout]);
+
+  const modalGridCols = modalLayout ? rackSlotGridCols(modalLayout.layout) : 1;
 
   return (
-    <Box>
-      <PageHeader title={t('pages:searchTitle')} />
-
-      <Tabs
-        value={tab}
-        onChange={(_, value: SearchTab) => setTab(value)}
-        sx={{ mb: 2 }}
-        variant="scrollable"
-        scrollButtons="auto"
-      >
-        {(Object.keys(tabLabels) as SearchTab[]).map((key) => (
-          <Tab key={key} value={key} label={tabLabels[key]} />
-        ))}
-      </Tabs>
-
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
-        {tab === 'barcode' ? (
-          <ScanInput
-            label={t('pages:searchByBarcode')}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onScan={(value) => {
-              setQuery(value);
-              setSubmittedQuery(value);
-              setActionError(null);
-              setActionSuccess(null);
-            }}
-          />
-        ) : (
-          <TextField
-            label={tabLabels[tab]}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearch();
-            }}
-            fullWidth
-          />
-        )}
-        <Button
-          variant="contained"
-          onClick={handleSearch}
-          disabled={!query.trim() || searchQuery.isFetching}
-          sx={{ minWidth: 140, alignSelf: { xs: 'stretch', md: 'center' } }}
-        >
-          {searchQuery.isFetching ? <CircularProgress size={22} color="inherit" /> : t('common:search')}
-        </Button>
-      </Stack>
-
-      {searchQuery.error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {getErrorMessage(searchQuery.error, t('common:error'))}
-        </Alert>
-      )}
-      {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
-          {actionError}
-        </Alert>
-      )}
-      {actionSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setActionSuccess(null)}>
-          {actionSuccess}
-        </Alert>
-      )}
-
-      <Box sx={{ height: 560, width: '100%' }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={searchQuery.isLoading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-          localeText={{ noRowsLabel: t('common:noData') }}
+    <div className="fx-scan-page">
+      {message && (
+        <div
+          className={`message ${message.kind}`}
+          dangerouslySetInnerHTML={{ __html: message.html }}
         />
-      </Box>
-
-      {searchQuery.isLoading && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {t('common:loading')}
-        </Typography>
       )}
-    </Box>
+
+      <div className="fx-scan-toolbar">
+        <button type="button" className="fx-btn fx-btn-secondary" onClick={handleClear}>
+          <i className="fas fa-eraser" /> {t('pages:searchClear')}
+        </button>
+        <button type="button" className="fx-btn fx-btn-danger" onClick={() => void handleResetLights()}>
+          <i className="fas fa-lightbulb" /> {t('pages:searchResetLights')}
+        </button>
+      </div>
+
+      <form id="searchForm" className="fade-in" onSubmit={handleSubmit}>
+        <div className="fx-form-panel fx-search-panel">
+          <label htmlFor="searchInput" className="fx-search-panel__title">
+            {t('pages:searchInputLabel')}
+          </label>
+          <div className="fx-scan-row">
+            <div className="fx-search-field">
+              <input
+                ref={inputRef}
+                type="text"
+                name="product_name"
+                id="searchInput"
+                className="fx-scan-input"
+                placeholder={t('pages:searchPlaceholder')}
+                value={query}
+                required
+                autoComplete="off"
+                disabled={searchMutation.isPending}
+                onChange={(e) => setQuery(normalizePuidInput(e.target.value))}
+              />
+              {searchMutation.isPending && (
+                <div className="fx-search-loader" aria-hidden="true">
+                  <i className="fas fa-circle-notch fa-spin" />
+                </div>
+              )}
+            </div>
+            <button type="submit" className="fx-btn fx-btn-accent" id="btnSearch" disabled={searchMutation.isPending}>
+              <i className="fas fa-search" /> {t('common:search')}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <section className="fx-rack-section">
+        <h3 className="fx-section-title">{t('pages:searchRackOverview')}</h3>
+
+        {hierarchyQuery.isLoading && (
+          <p className="message warning">{t('common:loading')}</p>
+        )}
+
+        {hierarchy && (
+          <div className="fx-rack-layout">
+            {hierarchy.racks.map((rack, rackIndex) => (
+              <RackCard
+                key={rack.id}
+                rack={rack}
+                delay={rackIndex * 0.1}
+                highlightBoxId={highlightBoxId}
+                highlightSlotId={highlightSlotId}
+                onBoxClick={(boxId, slotId) => void openBoxModal(boxId, slotId)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div
+        className={`fx-rack-modal${modalOpen ? ' is-open' : ''}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeModal();
+        }}
+        onKeyDown={() => undefined}
+        role="presentation"
+      >
+        <div className="fx-rack-modal__panel">
+          <h3 className="fx-rack-modal__title">{t('pages:searchBoxDetails')}</h3>
+          <div
+            className="fx-rack-modal__slots"
+            style={
+              modalLayout
+                ? {
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${modalGridCols}, 1fr)`,
+                    gap: '8px',
+                  }
+                : undefined
+            }
+          >
+            {modalLoading &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="fx-rack-skeleton" />
+              ))}
+            {modalError && <div className="message warning">{modalError}</div>}
+            {!modalLoading &&
+              !modalError &&
+              modalCells.map((cell, idx) => {
+                if (!cell) {
+                  return (
+                    <div
+                      key={`empty-${idx}`}
+                      style={{ visibility: 'hidden', border: 'none', background: 'transparent' }}
+                    />
+                  );
+                }
+                const highlighted =
+                  cell.highlighted ||
+                  (modalHighlightSlotId > 0 && cell.slotId === modalHighlightSlotId);
+                const filled = Boolean(cell.product?.name);
+                return (
+                  <div
+                    key={cell.slotId}
+                    className={`fx-rack-slot fade-in${highlighted ? ' is-highlighted' : ''}`}
+                    style={{ animationDelay: `${idx * 0.05}s` }}
+                  >
+                    <div style={{ fontWeight: 'bold', color: 'var(--fx-text)' }}>{cell.slotNo}</div>
+                    {filled ? (
+                      <div style={{ fontSize: '0.75rem', marginTop: 4, color: 'var(--fx-text-muted)' }}>
+                        {cell.product?.name}
+                        <br />
+                        <strong style={{ color: 'var(--fx-accent)' }}>{cell.product?.qty}</strong>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', marginTop: 4, color: 'var(--fx-danger)' }}>
+                        {t('pages:searchSlotEmpty')}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+          <button type="button" className="fx-btn fx-btn-secondary fx-btn-block" onClick={closeModal}>
+            <i className="fas fa-times" /> {t('common:close')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RackCard({
+  rack,
+  delay,
+  highlightBoxId,
+  highlightSlotId,
+  onBoxClick,
+}: {
+  rack: WarehouseHierarchy['racks'][number];
+  delay: number;
+  highlightBoxId: number;
+  highlightSlotId: number;
+  onBoxClick: (boxId: number, highlightSlotId: number) => void;
+}) {
+  return (
+    <div className="fx-rack fx-rack-stagger" style={{ animationDelay: `${delay}s` }}>
+      <h3>Rack: {rack.name}</h3>
+      {rack.levels.map((level) => (
+        <div key={level.id} className="fx-rack-level">
+          <h4>Level {level.levelNo}</h4>
+          <div className="fx-rack-level__boxes">
+            {level.boxes.map((box) => {
+              const isHighlighted = highlightBoxId > 0 && box.id === highlightBoxId;
+              return (
+                <button
+                  key={box.id}
+                  type="button"
+                  className={`fx-rack-box${isHighlighted ? ' is-highlighted' : ''}`}
+                  onClick={() => onBoxClick(box.id, isHighlighted ? highlightSlotId : 0)}
+                >
+                  {box.boxCode}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

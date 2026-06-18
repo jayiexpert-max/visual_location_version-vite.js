@@ -6,17 +6,19 @@ import { MqttHealthService } from '../mqtt/mqtt-health.service';
 import { MqttLogService } from '../mqtt/mqtt-log.service';
 import { RaspberryDeviceService } from '../mqtt/raspberry-device.service';
 import { HighlightGateway } from '../realtime/highlight.gateway';
+import { IoService } from './io.service';
 
 @ApiTags('io-monitor')
 @ApiBearerAuth('access-token')
 @Controller('io/monitor')
-@Roles('admin')
+@Roles('manage')
 export class IoMonitorController {
   constructor(
     private readonly mqttLogService: MqttLogService,
     private readonly mqttHealthService: MqttHealthService,
     private readonly raspberryDeviceService: RaspberryDeviceService,
     private readonly highlightGateway: HighlightGateway,
+    private readonly ioService: IoService,
   ) {}
 
   @Get('mqtt-logs')
@@ -34,9 +36,9 @@ export class IoMonitorController {
   }
 
   @Get('raspberry-devices')
-  @ApiOperation({ summary: 'Registered Raspberry Pi devices' })
+  @ApiOperation({ summary: 'Registered Raspberry Pi gateways' })
   raspberryDevices() {
-    return this.raspberryDeviceService.findAll();
+    return this.ioService.listRaspiGatewayDevices();
   }
 
   @Get('realtime-events')
@@ -50,12 +52,13 @@ export class IoMonitorController {
   @Get('health')
   @ApiOperation({ summary: 'Combined IoT monitor health snapshot' })
   async monitorHealth() {
-    const [mqtt, raspi, io] = await Promise.all([
+    const [mqtt, raspi, io, raspiGateways] = await Promise.all([
       this.mqttHealthService.getMqttHealth(),
       this.mqttHealthService.getRaspiHealth(),
       this.mqttHealthService.getIoHealth(),
+      this.ioService.listRaspiGatewayDevices(),
     ]);
 
-    return { mqtt, raspi, io };
+    return { mqtt, raspi, raspiGateways, io };
   }
 }

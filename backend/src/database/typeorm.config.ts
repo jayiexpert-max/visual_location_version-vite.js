@@ -10,8 +10,6 @@ export const entitiesPath = [
 export function createTypeOrmOptions(
   configService: ConfigService,
 ): TypeOrmModuleOptions {
-  const nodeEnv = configService.get<string>('app.nodeEnv', 'development');
-
   return {
     type: 'mysql',
     host: configService.getOrThrow<string>('database.host'),
@@ -24,7 +22,7 @@ export function createTypeOrmOptions(
     synchronize: false,
     autoLoadEntities: true,
     timezone: configService.get<string>('app.timezone', 'Asia/Bangkok'),
-    logging: nodeEnv === 'development',
+    logging: configService.get<boolean>('database.logging', false),
     extra: {
       connectionLimit: 10,
     },

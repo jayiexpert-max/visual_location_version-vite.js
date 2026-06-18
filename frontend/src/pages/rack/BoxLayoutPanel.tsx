@@ -13,14 +13,16 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSocketEvent } from '../../hooks/useSocket';
 import * as ioService from '../../services/ioService';
 import * as warehouseService from '../../services/warehouseService';
 import { SocketEvents } from '../../services/socketService';
+import { useAuthStore } from '../../store/authStore';
 import { getErrorMessage } from '../../services/apiClient';
 import type { BoxLayout, BoxLayoutCell } from '../../types/warehouse';
+import { arrangeSlotsByLayout, rackSlotGridCols } from '../../utils/rackSlotLayout';
 
 interface HighlightUpdatePayload {
   boxId: number;
@@ -37,6 +39,11 @@ interface BoxLayoutPanelProps {
 
 export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanelProps) {
   const { t } = useTranslation(['pages', 'common']);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const socketAuth = useMemo(
+    () => (accessToken ? { token: accessToken } : undefined),
+    [accessToken],
+  );
   const [layout, setLayout] = useState<BoxLayout | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +57,7 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
       const data = await warehouseService.getBoxLayout(id, slotId);
       setLayout(data);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
       setLayout(null);
     } finally {
       setLoading(false);
@@ -81,6 +88,7 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
     SocketEvents.highlightUpdate,
     handleHighlightUpdate,
     open && Boolean(boxId),
+    socketAuth,
   );
 
   const handleSlotClick = async (cell: BoxLayoutCell) => {
@@ -91,7 +99,7 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
       setHighlightSlotId(cell.slotId);
       await loadLayout(boxId, cell.slotId);
     } catch (err) {
-      setError(getErrorMessage(err, t('common:error')));
+      setError(getErrorMessage(err, t('common:error'), t));
     } finally {
       setIoLoading(null);
     }
@@ -99,6 +107,18 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
 
   const occupiedCount = layout?.cells.filter((c) => c.product).length ?? 0;
   const totalSlots = layout?.cells.length ?? 0;
+  const totalQty = layout?.cells.reduce(
+    (sum, cell) => sum + Math.max(cell.product?.qty ?? 0, cell.puids?.length ?? 0),
+    0,
+  ) ?? 0;
+
+  const displayCells = layout
+    ? arrangeSlotsByLayout(
+        [...layout.cells].sort((a, b) => a.slotNo - b.slotNo),
+        layout.layout,
+      )
+    : [];
+  const gridCols = layout ? rackSlotGridCols(layout.layout) : 1;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -139,6 +159,11 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
                 variant="outlined"
               />
               <Chip
+                label={`Total Qty: ${totalQty.toLocaleString()}`}
+                color={totalQty > 0 ? 'success' : 'error'}
+                variant="outlined"
+              />
+              <Chip
                 icon={<LightbulbIcon />}
                 label={t('common:triggerLight')}
                 size="small"
@@ -150,21 +175,31 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: `repeat(${layout.cols}, minmax(72px, 1fr))`,
+                gridTemplateColumns: `repeat(${gridCols}, minmax(72px, 1fr))`,
                 gap: 1.5,
               }}
             >
-              {layout.cells.map((cell) => {
+              {displayCells.map((cell, idx) => {
+                if (!cell) {
+                  return (
+                    <Box
+                      key={`empty-${idx}`}
+                      sx={{ visibility: 'hidden', minHeight: 72 }}
+                    />
+                  );
+                }
                 const filled = Boolean(cell.product);
                 const highlighted = cell.highlighted;
                 const busy = ioLoading === cell.slotId;
+                const puids = cell.puids ?? [];
+                const qty = Math.max(cell.product?.qty ?? 0, puids.length);
 
                 return (
                   <Tooltip
                     key={cell.slotId}
                     title={
                       filled
-                        ? `${cell.product?.name} · ${t('common:quantity')}: ${cell.product?.qty}`
+                        ? `${cell.product?.name} · ${t('common:quantity')}: ${qty}`
                         : t('common:noData')
                     }
                   >
@@ -180,29 +215,38 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
                         borderColor: highlighted ? 'warning.main' : filled ? 'success.main' : 'divider',
                         bgcolor: highlighted
                           ? 'warning.light'
-                          : filled
+                          : qty > 0
                             ? 'success.light'
-                            : 'action.hover',
+                            : '#fff5f5',
                         color: 'text.primary',
                         cursor: busy ? 'wait' : 'pointer',
-                        p: 1,
-                        textAlign: 'center',
+                        p: 1.25,
+                        textAlign: 'left',
                         transition: 'transform 0.15s, box-shadow 0.15s',
                         boxShadow: highlighted ? 4 : 0,
                         '&:hover': { transform: 'scale(1.03)', boxShadow: 3 },
                         opacity: busy ? 0.7 : 1,
                       }}
                     >
-                      <Typography variant="caption" fontWeight={700} display="block">
-                        {cell.slotNo}
-                      </Typography>
-                      <Typography variant="caption" display="block" noWrap>
-                        {filled ? cell.product?.name : '—'}
-                      </Typography>
-                      {filled && (
-                        <Typography variant="caption" color="text.secondary">
-                          {cell.product?.qty}
+                      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="caption" fontWeight={800} display="block">
+                            Slot: {cell.slotNo}
+                          </Typography>
+                          <Typography variant="caption" display="block" sx={{ color: qty > 0 ? 'text.secondary' : 'error.main' }}>
+                            {filled ? cell.product?.name : t('pages:searchSlotEmpty')}
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" fontWeight={900} color={qty > 0 ? 'success.main' : 'error.main'}>
+                          x {qty}
                         </Typography>
+                      </Stack>
+                      {puids.length > 0 && (
+                        <Box className="rack-puid-tags">
+                          {puids.map((puid) => (
+                            <span key={puid} className="rack-puid-tag">{puid}</span>
+                          ))}
+                        </Box>
                       )}
                     </Box>
                   </Tooltip>

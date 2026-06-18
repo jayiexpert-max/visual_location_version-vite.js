@@ -23,14 +23,21 @@ function authMatches(current: unknown, next?: SocketAuth): boolean {
 }
 
 export function getSocket(auth?: SocketAuth): Socket {
-  if (!socket || !authMatches(socket.auth, auth)) {
-    socket?.disconnect();
-    socket = io(`${SOCKET_URL}/realtime`, {
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
-      auth: buildAuthPayload(auth),
-    });
+  if (socket && authMatches(socket.auth, auth)) {
+    return socket;
   }
+
+  const previous = socket;
+  socket = io(`${SOCKET_URL}/realtime`, {
+    transports: ['websocket', 'polling'],
+    autoConnect: true,
+    auth: buildAuthPayload(auth),
+  });
+
+  if (previous) {
+    previous.disconnect();
+  }
+
   return socket;
 }
 

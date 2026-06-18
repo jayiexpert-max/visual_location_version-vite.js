@@ -11,6 +11,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { TvKiosk } from '../../common/decorators/tv-kiosk.decorator';
@@ -23,6 +24,7 @@ export class TvController {
   constructor(private readonly tvService: TvService) {}
 
   @Get('highlight')
+  @SkipThrottle()
   @TvKiosk()
   @ApiOperation({ summary: 'Get active TV highlight (JWT or TV kiosk key)' })
   @ApiBearerAuth('access-token')

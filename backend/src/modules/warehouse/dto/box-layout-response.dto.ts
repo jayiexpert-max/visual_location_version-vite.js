@@ -32,6 +32,13 @@ export class BoxLayoutCellDto {
 
   @ApiPropertyOptional({ type: BoxLayoutProductDto })
   product?: BoxLayoutProductDto | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['ABC123', 'DEF456'],
+    description: 'Active PUIDs in slot (inventory_receive)',
+  })
+  puids?: string[];
 }
 
 export class BoxLayoutResponseDto {

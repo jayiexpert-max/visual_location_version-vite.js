@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 function getLastCutoffMs(now: Date, morning: string, evening: string): number {
@@ -31,6 +32,7 @@ function getLastCutoffMs(now: Date, morning: string, evening: string): number {
 
 export function useShiftLogout(enabled = true) {
   const { logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!enabled) return;
@@ -40,12 +42,14 @@ export function useShiftLogout(enabled = true) {
       const cutoff = getLastCutoffMs(now, '07:00', '19:00');
       const loginAt = Number(sessionStorage.getItem('vl-login-at') ?? '0');
       if (loginAt > 0 && loginAt < cutoff) {
-        void logout();
+        void logout().finally(() => {
+          navigate('/login?shift=1', { replace: true });
+        });
       }
     };
 
     check();
     const interval = setInterval(check, 60_000);
     return () => clearInterval(interval);
-  }, [enabled, logout]);
+  }, [enabled, logout, navigate]);
 }

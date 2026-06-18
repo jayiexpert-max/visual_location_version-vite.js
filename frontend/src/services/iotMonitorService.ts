@@ -13,10 +13,15 @@ export interface MqttLogEntry {
 export interface RaspberryDevice {
   id: number;
   deviceId: number;
+  name?: string;
   ipAddress: string | null;
+  port?: number;
   status: 'online' | 'offline' | 'unknown';
   lastHeartbeatAt: string | null;
   outputCount: number;
+  message?: string;
+  healthUrl?: string;
+  controllerType?: string;
 }
 
 export async function getIoStatus(): Promise<unknown> {

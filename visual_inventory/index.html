@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Page Not Found</title>
+    <link rel="icon" type="image/png" href="public/assets/favicon.png">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #4b6cb7, #182848);
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 450px;
+            padding: 20px;
+            animation: fadeIn 1.5s ease;
+        }
+
+        h1 {
+            font-size: 120px;
+            margin: 0;
+            font-weight: 800;
+        }
+
+        h2 {
+            font-size: 28px;
+            margin-top: -10px;
+        }
+
+        p {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 25px;
+            background: #fff;
+            color: #182848;
+            text-decoration: none;
+            border-radius: 30px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        a:hover {
+            background: #ffe600;
+            color: #000;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>404</h1>
+        <h2>ไม่พบหน้าที่คุณต้องการ</h2>
+        <p>อาจถูกลบ ย้าย หรือ URL ไม่ถูกต้อง</p>
+        <a href="/">กลับหน้าแรก</a>
+    </div>
+</body>
+</html>

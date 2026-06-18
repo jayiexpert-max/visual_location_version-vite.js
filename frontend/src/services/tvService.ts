@@ -6,6 +6,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 export interface TvHighlight {
   id: number;
   productName: string | null;
+  puid: string | null;
   boxId: number;
   slotId: number | null;
   slotNo: number | null;
@@ -21,13 +22,15 @@ export interface TvHighlight {
 }
 
 export async function getTvHighlight(tvKey?: string): Promise<TvHighlight | null> {
-  const headers: Record<string, string> = {};
-  if (tvKey) headers['X-TV-Kiosk-Key'] = tvKey;
-  const { data } = await axios.get<ApiSuccessResponse<TvHighlight | null>>(
-    `${API_BASE}/tv/highlight`,
-    { headers },
-  );
-  return data.data;
+  if (tvKey) {
+    const { data } = await axios.get<ApiSuccessResponse<TvHighlight | null>>(
+      `${API_BASE}/tv/highlight`,
+      { headers: { 'X-TV-Kiosk-Key': tvKey } },
+    );
+    return data.data;
+  }
+  const { apiGet } = await import('./apiClient');
+  return apiGet<TvHighlight | null>('/tv/highlight');
 }
 
 export async function setTvHighlight(payload: Record<string, unknown>): Promise<TvHighlight> {

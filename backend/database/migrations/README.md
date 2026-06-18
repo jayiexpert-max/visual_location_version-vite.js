@@ -1,36 +1,60 @@
 # Database Migrations
 
-## Baseline (existing PHP data)
+> **Quick commands (from repo root):** `npm run db:init` · `npm run db:migrate` · `npm run db:verify`
 
-Import the full schema and seed data from the legacy project:
+Environment variables (optional): `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (default `visual_inventory_db`).
 
-```bash
-mysql -u root -p visual_inventory_db < \
-  /Applications/XAMPP/xamppfiles/htdocs/visual_inventory/visual_inventory_db.sql
-```
+## Fresh database (no PHP seed data)
 
-## Phase 1 additive migrations
-
-Apply after baseline:
+Creates schema + IoT + production tables. Does **not** include test users — import PHP dump or create users separately.
 
 ```bash
-mysql -u root -p visual_inventory_db < database/migrations/001_additive_phase1.sql
+npm run db:init
+npm run db:verify
 ```
 
-## Order
+Uses:
 
 | File | Purpose |
 |------|---------|
-| `visual_inventory_db.sql` (PHP repo) | Baseline tables, views, seed data |
-| `001_additive_phase1.sql` | JWT, language preference, TV highlights, audit |
+| `init/01_full_schema.sql` | Baseline PHP tables + views + Phase 1 additive |
+| `migrations/002_phase4_iot.sql` | Raspberry Pi registry, device presence |
+| `migrations/003_phase6_production.sql` | Audit logs, account lockout |
 
-## Rollback
+## Existing PHP database (recommended for dev)
 
-Phase 1 additive changes are non-destructive. To rollback:
+Import legacy dump first, then apply NestJS migrations:
+
+```bash
+mysql -u root visual_inventory_db < /path/to/visual_inventory/visual_inventory_db.sql
+npm run db:migrate
+npm run db:verify
+```
+
+`db:migrate` applies in order:
+
+| File | Purpose |
+|------|---------|
+| `001_additive_phase1.sql` | JWT refresh tokens, TV highlights, IO logs, `users.lang` |
+| `002_phase4_iot.sql` | IoT device registry |
+| `004_app_settings.sql` | App settings key-value store |
+| `005_phase4_tv_puid.sql` | TV highlight PUID column |
+| `006_user_is_active.sql` | `users.is_active` for enable/disable accounts |
+| `007_users_role_manage.sql` | Add `manage` role to `users.role` enum |
+
+## Verify
+
+```bash
+npm run db:verify
+```
+
+Checks required tables: `users`, `racks`, `inventory_receive`, `reservation_list`, `refresh_tokens`, `tv_highlights`, `io_command_logs`, `raspberry_devices`, `audit_logs`.
+
+## Rollback (Phase 1 additive only)
 
 ```sql
 DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS tv_highlights;
 DROP TABLE IF EXISTS io_command_logs;
-ALTER TABLE users DROP COLUMN lang;
+ALTER TABLE users DROP COLUMN IF EXISTS lang;
 ```
