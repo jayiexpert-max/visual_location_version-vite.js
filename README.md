@@ -37,6 +37,7 @@ npm run install:all
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 
+# Run these from the project root: /Users/jayoverlay/Documents/visual_location
 npm run backend:dev   # Terminal 1 → http://localhost:3000
 npm run frontend:dev  # Terminal 2 → http://localhost:5173
 ```
@@ -62,8 +63,21 @@ cp frontend/.env.example frontend/.env
 เริ่มระบบสำหรับ development:
 
 ```bash
+# ต้องรันจาก root project ไม่ใช่ใน backend/ หรือ frontend/
 npm run backend:dev
 npm run frontend:dev -- --host 0.0.0.0
+```
+
+ถ้าอยู่ในโฟลเดอร์ `backend/` แล้ว ให้ใช้:
+
+```bash
+npm run start:dev
+```
+
+ถ้าอยู่ในโฟลเดอร์ `frontend/` แล้ว ให้ใช้:
+
+```bash
+npm run dev -- --host 0.0.0.0
 ```
 
 ถ้าเจอ `vite: command not found` ให้รัน `npm run frontend:install` หรือ `npm run install:all`

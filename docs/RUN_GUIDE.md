@@ -296,6 +296,9 @@ docker compose down -v
 
 หรือรันในโฟลเดอร์โดยตรง: `cd backend && npm run start:dev` / `cd frontend && npm run dev`
 
+> ถ้า terminal อยู่ใน `backend/` แล้วรัน `npm run backend:dev` จะขึ้น `Missing script: "backend:dev"`
+> เพราะ script นี้อยู่ใน `package.json` ชั้น root เท่านั้น
+
 ---
 
 ## การตั้งค่าเพิ่มเติม (โรงงาน / Production)
