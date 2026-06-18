@@ -1,10 +1,10 @@
 import '../../styles/receive-list.css';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { format } from 'date-fns';
 import { useExport } from '../../hooks/useExport';
 import * as reportsService from '../../services/reportsService';
 import { getErrorMessage } from '../../services/apiClient';
+import { formatFactoryDate, formatFactoryTime, parseFactoryDate } from '../../utils/dateTime';
 
 interface ReceiveRow {
   id: number;
@@ -36,18 +36,20 @@ const PAGE_SIZE = 20;
 
 function fmtDate(val: string | null | undefined, includeTime = false) {
   if (!val) return null;
-  try {
-    return format(new Date(val), includeTime ? 'dd/MM/yyyy HH:mm' : 'dd/MM/yyyy');
-  } catch {
-    return val;
-  }
+  const date = formatFactoryDate(val);
+  if (!date) return val;
+  if (!includeTime) return date;
+  const time = formatFactoryTime(val);
+  return time ? `${date} ${time}` : date;
 }
 
 function daysLeft(val: string | null | undefined): number | null {
   if (!val) return null;
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const exp = new Date(val); exp.setHours(0, 0, 0, 0);
+    const exp = parseFactoryDate(val);
+    if (!exp) return null;
+    exp.setHours(0, 0, 0, 0);
     return Math.round((exp.getTime() - today.getTime()) / 86400000);
   } catch { return null; }
 }
@@ -285,7 +287,7 @@ export function ReceiveListPage() {
                     <td>
                       <div className="rl-date">
                         <strong>{fmtDate(row.receiveDate) ?? '—'}</strong>
-                        {row.receiveDate && <span>{format(new Date(row.receiveDate), 'HH:mm')}</span>}
+                        {row.receiveDate && <span>{formatFactoryTime(row.receiveDate) ?? '—'}</span>}
                       </div>
                     </td>
                     <td>

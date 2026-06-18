@@ -21,7 +21,7 @@ export function createTypeOrmOptions(
     entities: entitiesPath,
     synchronize: false,
     autoLoadEntities: true,
-    timezone: configService.get<string>('app.timezone', 'Asia/Bangkok'),
+    timezone: configService.get<string>('database.timezone', '+07:00'),
     logging: configService.get<boolean>('database.logging', false),
     extra: {
       connectionLimit: 10,

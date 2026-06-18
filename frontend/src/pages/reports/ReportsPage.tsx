@@ -1,10 +1,10 @@
 import '../../styles/report-stock.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { format } from 'date-fns';
 import { PageHeader } from '../../components/layout/PageHeader';
 import * as reportsService from '../../services/reportsService';
 import { getErrorMessage } from '../../services/apiClient';
+import { formatFactoryDate, formatFactoryTime } from '../../utils/dateTime';
 import type { TFunction } from 'i18next';
 
 interface StockMovementRow {
@@ -241,8 +241,8 @@ export function ReportsPage() {
                 else if (kind === 'res_receive') { badgeClass = 'badge-res-receive'; badgeIcon = 'fa-file-invoice'; }
                 else if (kind === 'booking_out') { badgeClass = 'badge-booking-out'; badgeIcon = 'fa-dolly'; }
 
-                const dateStr = row.createdAt ? format(new Date(row.createdAt), 'dd/MM/yyyy') : '—';
-                const timeStr = row.createdAt ? format(new Date(row.createdAt), 'HH:mm') : '—';
+                const dateStr = formatFactoryDate(row.createdAt) ?? '—';
+                const timeStr = formatFactoryTime(row.createdAt) ?? '—';
                 const timeSuffix = t('pages:reportTimeSuffix');
 
                 return (

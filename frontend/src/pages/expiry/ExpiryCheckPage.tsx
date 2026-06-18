@@ -7,6 +7,7 @@ import { useExport } from '../../hooks/useExport';
 import * as inventoryService from '../../services/inventoryService';
 import * as reportsService from '../../services/reportsService';
 import { getErrorMessage } from '../../services/apiClient';
+import { formatFactoryDate, formatFactoryIsoDate } from '../../utils/dateTime';
 import type { PaginatedResult } from '../../types/api';
 import type { ExpirationReportItem, ExpirationReportParams } from '../../types/reports';
 
@@ -149,7 +150,7 @@ export function ExpiryCheckPage() {
       'PUID Count': row.puidCount ?? 0,
       'Lot Number(s)': row.lotsRaw ?? '-',
       'Total Qty': row.totalQty ?? 0,
-      ExpirationDate: row.expirationDate ? format(new Date(row.expirationDate), 'yyyy-MM-dd') : '',
+      ExpirationDate: row.expirationDate ? formatFactoryIsoDate(row.expirationDate) ?? '' : '',
       DaysLeft: row.daysLeft ?? '',
       Status: row.statusText ?? '',
     }));
@@ -376,7 +377,7 @@ export function ExpiryCheckPage() {
                   daysColor = 'days-left--soon';
                 }
 
-                const expDateStr = row.expirationDate ? format(new Date(row.expirationDate), 'dd/MM/yyyy') : '—';
+                const expDateStr = formatFactoryDate(row.expirationDate) ?? '—';
 
                 return (
                   <tr key={`${row.hanaPart}-${row.im}`} className={rowClass}>

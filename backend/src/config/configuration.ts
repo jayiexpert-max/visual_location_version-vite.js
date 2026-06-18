@@ -15,6 +15,7 @@ export interface DatabaseConfig {
   user: string;
   password: string;
   charset: string;
+  timezone: string;
   logging: boolean;
 }
 
@@ -125,6 +126,7 @@ export default (): RootConfig => ({
     user: process.env.DB_USER ?? 'root',
     password: process.env.DB_PASS ?? '',
     charset: process.env.DB_CHARSET ?? 'utf8mb4',
+    timezone: process.env.DB_TIMEZONE ?? '+07:00',
     logging: parseBool(process.env.DB_LOGGING, false),
   },
   jwt: {
