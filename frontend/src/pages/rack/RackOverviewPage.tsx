@@ -13,7 +13,9 @@ import { PageHeader } from '../../components/layout/PageHeader';
 import * as warehouseService from '../../services/warehouseService';
 import { getErrorMessage } from '../../services/apiClient';
 import type {
+  BoxLayout,
   HierarchyBox,
+  HierarchyLevel,
   HierarchyRack,
   WarehouseHierarchy,
 } from '../../types/warehouse';
@@ -21,6 +23,7 @@ import { useSocketEvent } from '../../hooks/useSocket';
 import { SocketEvents } from '../../services/socketService';
 import { useAuthStore } from '../../store/authStore';
 import { BoxLayoutPanel } from './BoxLayoutPanel';
+import { rackSlotGridCols, rackSlotGridFromIndex, rackSlotGridRows } from '../../utils/rackSlotLayout';
 
 const ROWS_PER_PAGE = 10;
 
@@ -46,6 +49,45 @@ function rackStats(rack: HierarchyRack) {
     }
   }
   return { totalQty, activeBoxes, totalBoxes };
+}
+
+function buildBoxLayoutPreview(
+  rack: HierarchyRack,
+  level: HierarchyLevel,
+  box: HierarchyBox,
+): BoxLayout {
+  const sortedSlots = [...box.slots].sort((a, b) => a.slotNo - b.slotNo);
+  const rows = rackSlotGridRows(box.layout, sortedSlots.length);
+  const cols = rackSlotGridCols(box.layout);
+
+  return {
+    boxId: box.id,
+    boxCode: box.boxCode,
+    layout: box.layout,
+    rows,
+    cols,
+    rackId: rack.id,
+    rackName: rack.name,
+    levelNo: level.levelNo,
+    cells: sortedSlots.map((slot, index) => {
+      const { col, visRow } = rackSlotGridFromIndex(index, rows);
+      return {
+        slotId: slot.id,
+        slotNo: slot.slotNo,
+        row: visRow + 1,
+        col: col + 1,
+        highlighted: false,
+        puids: slot.puids ?? [],
+        product: slot.product
+          ? {
+              id: slot.product.id,
+              name: slot.product.name,
+              qty: slot.product.qty,
+            }
+          : null,
+      };
+    }),
+  };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -101,7 +143,7 @@ function GridView({
   onBoxSelect,
 }: {
   hierarchy: WarehouseHierarchy;
-  onBoxSelect: (box: HierarchyBox) => void;
+  onBoxSelect: (box: HierarchyBox, initialLayout: BoxLayout) => void;
 }) {
   return (
     <div className="rack-grid">
@@ -114,7 +156,11 @@ function GridView({
                 <span className="level-label">Level {level.levelNo}</span>
                 <div className="box-container">
                   {level.boxes.map((box) => (
-                    <BoxBadge key={box.id} box={box} onSelect={onBoxSelect} />
+                    <BoxBadge
+                      key={box.id}
+                      box={box}
+                      onSelect={() => onBoxSelect(box, buildBoxLayoutPreview(rack, level, box))}
+                    />
                   ))}
                 </div>
               </div>
@@ -127,6 +173,8 @@ function GridView({
 }
 
 interface FlatRow {
+  rack: HierarchyRack;
+  level: HierarchyLevel;
   rackName: string;
   levelNo: number;
   box: HierarchyBox;
@@ -144,7 +192,7 @@ function buildFlatRows(hierarchy: WarehouseHierarchy): FlatRow[] {
           .filter((s) => s.product && Math.max(s.product.qty, s.puids?.length ?? 0) > 0 && s.product.name.trim())
           .map((s) => s.product!.name.trim());
         const unique = [...new Set(parts)];
-        rows.push({ rackName: rack.name, levelNo: level.levelNo, box, qty, hanaParts: unique });
+        rows.push({ rack, level, rackName: rack.name, levelNo: level.levelNo, box, qty, hanaParts: unique });
       }
     }
   }
@@ -156,7 +204,7 @@ function TableView({
   onBoxSelect,
 }: {
   hierarchy: WarehouseHierarchy;
-  onBoxSelect: (box: HierarchyBox) => void;
+  onBoxSelect: (box: HierarchyBox, initialLayout: BoxLayout) => void;
 }) {
   const { t } = useTranslation(['pages', 'common']);
   const [page, setPage] = useState(1);
@@ -191,7 +239,9 @@ function TableView({
             </tr>
           </thead>
           <tbody>
-            {sliced.map(({ rackName, levelNo, box, qty, hanaParts }) => (
+            {sliced.map(({ rack, level, rackName, levelNo, box, qty, hanaParts }) => {
+              const preview = buildBoxLayoutPreview(rack, level, box);
+              return (
               <tr key={box.id}>
                 <td>Rack {rackName}</td>
                 <td>Level {levelNo}</td>
@@ -212,13 +262,14 @@ function TableView({
                     type="button"
                     className="btn-white"
                     style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                    onClick={() => onBoxSelect(box)}
+                    onClick={() => onBoxSelect(box, preview)}
                   >
                     {t('pages:searchBoxDetails')}
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -274,6 +325,7 @@ export function RackOverviewPage() {
   const [view, setView] = useState<'grid' | 'table'>('grid');
 
   const [selectedBox, setSelectedBox] = useState<HierarchyBox | null>(null);
+  const [selectedLayout, setSelectedLayout] = useState<BoxLayout | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
   const loadHierarchy = useCallback(async () => {
@@ -314,8 +366,9 @@ export function RackOverviewPage() {
     return { totalProducts, totalRacks: hierarchy.racks.length, totalBoxes, activeBoxes };
   }, [hierarchy]);
 
-  const handleBoxSelect = (box: HierarchyBox) => {
+  const handleBoxSelect = (box: HierarchyBox, initialLayout: BoxLayout) => {
     setSelectedBox(box);
+    setSelectedLayout(initialLayout);
     setPanelOpen(true);
   };
 
@@ -397,9 +450,11 @@ export function RackOverviewPage() {
         open={panelOpen}
         boxId={selectedBox?.id ?? null}
         boxCode={selectedBox?.boxCode}
+        initialLayout={selectedLayout}
         onClose={() => {
           setPanelOpen(false);
           setSelectedBox(null);
+          setSelectedLayout(null);
         }}
       />
     </>

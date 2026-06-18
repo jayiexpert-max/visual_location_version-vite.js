@@ -34,10 +34,11 @@ interface BoxLayoutPanelProps {
   open: boolean;
   boxId: number | null;
   boxCode?: string;
+  initialLayout?: BoxLayout | null;
   onClose: () => void;
 }
 
-export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanelProps) {
+export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }: BoxLayoutPanelProps) {
   const { t } = useTranslation(['pages', 'common']);
   const accessToken = useAuthStore((s) => s.accessToken);
   const socketAuth = useMemo(
@@ -47,7 +48,6 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
   const [layout, setLayout] = useState<BoxLayout | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [highlightSlotId, setHighlightSlotId] = useState<number | undefined>();
   const [ioLoading, setIoLoading] = useState<number | null>(null);
 
   const loadLayout = useCallback(async (id: number, slotId?: number) => {
@@ -66,22 +66,32 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
 
   useEffect(() => {
     if (open && boxId) {
-      void loadLayout(boxId, highlightSlotId);
+      if (initialLayout) {
+        setLayout(initialLayout);
+      }
+      void loadLayout(boxId);
     } else {
       setLayout(null);
-      setHighlightSlotId(undefined);
       setError(null);
     }
-  }, [open, boxId, highlightSlotId, loadLayout]);
+  }, [open, boxId, initialLayout, loadLayout]);
 
   const handleHighlightUpdate = useCallback(
     (payload: HighlightUpdatePayload) => {
       if (!boxId || payload.boxId !== boxId) return;
       const slotId = payload.slotId ?? undefined;
-      setHighlightSlotId(slotId);
-      void loadLayout(boxId, slotId);
+      setLayout((current) => current
+        ? {
+            ...current,
+            cells: current.cells.map((cell) => ({
+              ...cell,
+              highlighted: cell.slotId === slotId,
+            })),
+          }
+        : current,
+      );
     },
-    [boxId, loadLayout],
+    [boxId],
   );
 
   useSocketEvent<HighlightUpdatePayload>(
@@ -96,8 +106,16 @@ export function BoxLayoutPanel({ open, boxId, boxCode, onClose }: BoxLayoutPanel
     setIoLoading(cell.slotId);
     try {
       await ioService.ioHighlight({ boxId, slotNo: cell.slotNo });
-      setHighlightSlotId(cell.slotId);
-      await loadLayout(boxId, cell.slotId);
+      setLayout((current) => current
+        ? {
+            ...current,
+            cells: current.cells.map((slot) => ({
+              ...slot,
+              highlighted: slot.slotId === cell.slotId,
+            })),
+          }
+        : current,
+      );
     } catch (err) {
       setError(getErrorMessage(err, t('common:error'), t));
     } finally {
