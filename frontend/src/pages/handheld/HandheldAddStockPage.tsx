@@ -6,6 +6,7 @@ import * as inventoryService from '../../services/inventoryService';
 import { sendHandheldReceiveHighlight } from '../../utils/handheldHighlight';
 import { getErrorMessage } from '../../services/apiClient';
 import { normalizePuidInput } from '../../utils/reservationUtils';
+import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
 function formatLocation(meta: inventoryService.InventoryLookupData): string {
   return [meta.Loc_Shelf, meta.Loc_Level, meta.Loc_Box, meta.Loc_Slot]
@@ -16,6 +17,7 @@ function formatLocation(meta: inventoryService.InventoryLookupData): string {
 export function HandheldAddStockPage() {
   const { t } = useTranslation(['pages', 'common']);
   const { user, canAccess } = useAuth();
+  const serviceReadiness = useServiceReadiness();
   const puidRef = useRef<HTMLInputElement>(null);
 
   const [puid, setPuid] = useState('');
@@ -74,6 +76,10 @@ export function HandheldAddStockPage() {
 
   const confirmReceive = async () => {
     if (!meta || !user || qtyRemain === '') return;
+    if (!serviceReadiness.cpkOk) {
+      setMessage({ type: 'warning', text: t('pages:serviceNotReady') });
+      return;
+    }
     const slotId = meta.slot_id;
     if (!slotId) {
       setMessage({ type: 'error', text: t('pages:resNoSlot') });
@@ -185,7 +191,7 @@ export function HandheldAddStockPage() {
         <button
           type="button"
           className="fx-btn fx-btn-primary"
-          disabled={!meta || qtyRemain === '' || saveLoading}
+          disabled={!meta || qtyRemain === '' || saveLoading || !serviceReadiness.cpkOk || serviceReadiness.loading}
           onClick={() => void confirmReceive()}
         >
           {saveLoading ? t('pages:addStockSaving') : t('confirmReceive')}

@@ -322,6 +322,9 @@ interface RackOverviewSectionProps {
   highlightSlotId?: number;
   showTitle?: boolean;
   title?: string;
+  view?: 'grid' | 'table';
+  onViewChange?: (view: 'grid' | 'table') => void;
+  showToolbar?: boolean;
 }
 
 export function RackOverviewSection({
@@ -329,6 +332,9 @@ export function RackOverviewSection({
   highlightSlotId = 0,
   showTitle = true,
   title,
+  view: controlledView,
+  onViewChange,
+  showToolbar = true,
 }: RackOverviewSectionProps) {
   const { t } = useTranslation(['pages', 'common']);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -392,28 +398,33 @@ export function RackOverviewSection({
     setPanelOpen(true);
   };
 
+  const currentView = controlledView ?? view;
+  const setCurrentView = onViewChange ?? setView;
+
   return (
     <>
       {showTitle && <h3 className="fx-section-title">{title ?? t('rackTitle')}</h3>}
 
-      <div className="fx-scan-toolbar" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          className={`fx-btn fx-btn-secondary${view === 'grid' ? ' active' : ''}`}
-          id="btnGrid"
-          onClick={() => setView('grid')}
-        >
-          <GridViewIcon fontSize="small" /> {t('pages:rackViewGrid')}
-        </button>
-        <button
-          type="button"
-          className={`fx-btn fx-btn-secondary${view === 'table' ? ' active' : ''}`}
-          id="btnTable"
-          onClick={() => setView('table')}
-        >
-          <TableRowsIcon fontSize="small" /> {t('pages:rackViewTable')}
-        </button>
-      </div>
+      {showToolbar && (
+        <div className="fx-scan-toolbar" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`fx-btn fx-btn-secondary${currentView === 'grid' ? ' active' : ''}`}
+            id="btnGrid"
+            onClick={() => setCurrentView('grid')}
+          >
+            <GridViewIcon fontSize="small" /> {t('pages:rackViewGrid')}
+          </button>
+          <button
+            type="button"
+            className={`fx-btn fx-btn-secondary${currentView === 'table' ? ' active' : ''}`}
+            id="btnTable"
+            onClick={() => setCurrentView('table')}
+          >
+            <TableRowsIcon fontSize="small" /> {t('pages:rackViewTable')}
+          </button>
+        </div>
+      )}
 
       <div className="stats-grid">
         <StatCard
@@ -458,7 +469,7 @@ export function RackOverviewSection({
         </div>
       ) : !hierarchy?.racks.length ? (
         <p style={{ color: '#64748b' }}>{t('common:noData')}</p>
-      ) : view === 'grid' ? (
+      ) : currentView === 'grid' ? (
         <GridView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />
       ) : (
         <TableView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />

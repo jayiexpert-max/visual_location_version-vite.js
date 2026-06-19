@@ -20,6 +20,17 @@ import { InventoryProductRepository } from '../repositories/product.repository';
 import { StockLogRepository } from '../repositories/stock-log.repository';
 import { HighlightGateway } from '../../realtime/highlight.gateway';
 import { InventoryService } from './inventory.service';
+import { MaterialsService } from '../../materials/materials.service';
+
+function isExpiredDate(value: string | Date | null | undefined): boolean {
+  if (!value) return false;
+  const exp = new Date(value);
+  if (Number.isNaN(exp.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  exp.setHours(0, 0, 0, 0);
+  return exp < today;
+}
 
 export interface ReceiveResult {
   inventoryReceive: InventoryReceive;
@@ -47,12 +58,14 @@ export class ReceiveService {
     private readonly auditService: AuditService,
     private readonly cpkService: CpkService,
     private readonly cpkTokenService: CpkTokenService,
+    private readonly materialsService: MaterialsService,
   ) {}
 
   async receiveItem(
     dto: ReceiveItemDto,
     user: AuthenticatedUser,
   ): Promise<ReceiveResult> {
+    const started = Date.now();
     const slot = await this.slotRepository.findById(dto.slotId);
 
     if (!slot) {
@@ -62,8 +75,15 @@ export class ReceiveService {
       });
     }
 
+    const lookupStarted = Date.now();
     const existingPuid = await this.inventoryReceiveRepository.findByPuid(dto.puid);
+    this.logger.debug(`receiveItem existingPuid lookup ${Date.now() - lookupStarted}ms`);
     const cpkWarnings: string[] = [];
+    if (isExpiredDate(dto.expirationDate)) {
+      cpkWarnings.push(
+        'Received expired material — send for shelf-life extension.',
+      );
+    }
 
     if (existingPuid) {
       const status = String(existingPuid.statusName ?? '');
@@ -87,6 +107,7 @@ export class ReceiveService {
     }
 
     if (this.cpkTokenService.getMcId() && dto.reservationNo && !dto.skipCpk) {
+      const cpkStarted = Date.now();
       try {
         await this.cpkService.resPuidRecv({
           resNo: dto.reservationNo,
@@ -96,6 +117,7 @@ export class ReceiveService {
             .filter(Boolean)
             .join(' '),
         });
+        this.logger.debug(`receiveItem CPK RES_PUIDRecv ${Date.now() - cpkStarted}ms`);
       } catch (error) {
         this.logger.warn(
           `CPK RES_PUIDRecv failed for ${dto.puid}: ${error instanceof Error ? error.message : error}`,
@@ -109,6 +131,7 @@ export class ReceiveService {
       cpkWarnings.push('Skipped CPK receive (already received in CPK).');
     }
 
+    const txStarted = Date.now();
     const result = await this.dataSource.transaction(async (manager) => {
       const receiveRepo =
         manager.getRepository(InventoryReceive);
@@ -182,6 +205,7 @@ export class ReceiveService {
         newQty: product.qty,
       };
     });
+    this.logger.debug(`receiveItem transaction ${Date.now() - txStarted}ms`);
 
     this.emitInventoryChange(dto.slotId, slot.boxId ?? 0, 'receive');
 
@@ -209,10 +233,18 @@ export class ReceiveService {
       },
     });
 
+    this.logger.debug(`receiveItem completed in ${Date.now() - started}ms`);
+    await this.syncMaterialMaster({
+      materialCode: dto.hanaPart,
+      description: dto.description ?? null,
+      remark: dto.remark ?? null,
+      context: 'receiveItem',
+    });
     return { ...result, cpkWarnings };
   }
 
   async addStock(dto: AddStockDto, user: AuthenticatedUser): Promise<ReceiveResult> {
+    const started = Date.now();
     const puid = dto.puid.trim();
     const hanaPart = dto.hanaPart.trim();
 
@@ -230,7 +262,9 @@ export class ReceiveService {
       });
     }
 
+    const masterLookupStarted = Date.now();
     const masterProducts = await this.productRepository.findByName(hanaPart);
+    this.logger.debug(`receiveReturn master product lookup ${Date.now() - masterLookupStarted}ms`);
     if (masterProducts.length === 0) {
       throw new BadRequestException({
         message: `Part "${hanaPart}" is not registered in the system (add via Admin first)`,
@@ -246,7 +280,9 @@ export class ReceiveService {
       });
     }
 
+    const existingLookupStarted = Date.now();
     const existingPuid = await this.inventoryReceiveRepository.findByPuid(puid);
+    this.logger.debug(`receiveReturn existingPuid lookup ${Date.now() - existingLookupStarted}ms`);
     const isNewReel =
       !existingPuid ||
       ['Withdrawn', 'Empty', 'Is empty'].includes(
@@ -254,6 +290,11 @@ export class ReceiveService {
       );
 
     const cpkWarnings: string[] = [];
+    if (isExpiredDate(dto.expirationDate)) {
+      cpkWarnings.push(
+        'Received expired material — send for shelf-life extension.',
+      );
+    }
     let cpkSynced = false;
     let qtyRemain = dto.qtyRemain;
 
@@ -273,12 +314,14 @@ export class ReceiveService {
         .join(' ');
 
       try {
+        const cpkStarted = Date.now();
         await this.cpkService.updatePuidStatus({
           puid,
           operator: user.username,
           newQty: String(qtyRemain),
           location: location || undefined,
         });
+        this.logger.debug(`receiveReturn CPK updatePuidStatus ${Date.now() - cpkStarted}ms`);
         cpkSynced = true;
       } catch (error) {
         this.logger.warn(
@@ -302,6 +345,7 @@ export class ReceiveService {
       ? new Date(dto.expireDateRoomTemp)
       : null;
 
+    const txStarted = Date.now();
     const result = await this.dataSource.transaction(async (manager) => {
       const receiveRepo = manager.getRepository(InventoryReceive);
 
@@ -412,6 +456,7 @@ export class ReceiveService {
         newQty,
       };
     });
+    this.logger.debug(`receiveReturn transaction ${Date.now() - txStarted}ms`);
 
     this.emitInventoryChange(dto.slotId, slot.boxId ?? 0, 'add-stock');
 
@@ -431,6 +476,13 @@ export class ReceiveService {
       },
     });
 
+    this.logger.debug(`receiveReturn completed in ${Date.now() - started}ms`);
+    await this.syncMaterialMaster({
+      materialCode: hanaPart,
+      description: dto.description ?? null,
+      remark: dto.remark ?? null,
+      context: 'receiveReturn',
+    });
     return { ...result, cpkWarnings, cpkSynced, isNewReel };
   }
 
@@ -446,5 +498,29 @@ export class ReceiveService {
       action,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private async syncMaterialMaster(input: {
+    materialCode: string;
+    description?: string | null;
+    remark?: string | null;
+    context: 'receiveItem' | 'receiveReturn';
+  }): Promise<void> {
+    try {
+      const result = await this.materialsService.upsertFromInventoryReceive({
+        materialCode: input.materialCode,
+        description: input.description,
+        remark: input.remark,
+      });
+      if (result.created || result.updated) {
+        this.logger.debug(
+          `${input.context} material master ${result.created ? 'created' : 'updated'} for ${input.materialCode.trim()}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `${input.context} material master sync failed for ${input.materialCode.trim()}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
   }
 }

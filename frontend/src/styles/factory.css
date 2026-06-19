@@ -1130,6 +1130,29 @@ html {
     margin-bottom: 1rem;
 }
 
+.factory-app .fx-scan-toolbar--search {
+    justify-content: space-between;
+    align-items: center;
+}
+
+.factory-app .fx-search-panel__actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.factory-app .fx-search-panel__actions--left {
+    margin-right: auto;
+}
+
+.factory-app .fx-search-view-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
 /* ——— Form fields (scan / data-entry pages) ——— */
 .factory-app label {
     display: block;
@@ -1176,13 +1199,17 @@ html {
 }
 
 .fx-form-panel {
-    max-width: 900px;
+    max-width: 1060px;
     margin: 0 auto 2rem;
-    background: var(--fx-surface);
-    padding: 1.5rem;
-    border-radius: var(--fx-radius-lg);
-    border: 1px solid var(--fx-border);
-    box-shadow: var(--fx-shadow);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+        var(--fx-surface);
+    padding: 1.75rem 1.75rem 1.5rem;
+    border-radius: 18px;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    box-shadow:
+        0 8px 24px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .fx-form-actions {
@@ -1222,8 +1249,23 @@ html {
 }
 
 .fx-search-panel {
-    max-width: 36rem;
+    max-width: 72rem;
     margin: 0 auto 2rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.fx-search-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), transparent 42%);
+    pointer-events: none;
+}
+
+.fx-search-panel > * {
+    position: relative;
+    z-index: 1;
 }
 
 .fx-search-panel__title {
@@ -1237,18 +1279,28 @@ html {
 
 .fx-search-field {
     position: relative;
-    flex: 1 1 240px;
+    flex: 1 1 380px;
+    min-width: 320px;
 }
 
 .fx-search-field .fx-scan-input {
     width: 100%;
     box-sizing: border-box;
     padding-right: 2.75rem;
+    min-height: 58px;
+    height: 58px;
+    border-radius: 16px;
+    font-size: 1.08rem;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .fx-search-panel .fx-scan-row .fx-btn {
     flex: 0 0 auto;
     white-space: nowrap;
+    min-height: 58px;
+    height: 58px;
+    padding-inline: 1.1rem;
+    border-radius: 16px;
 }
 
 .fx-search-loader {

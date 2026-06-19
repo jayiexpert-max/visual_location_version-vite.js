@@ -41,10 +41,13 @@ export class BookingOutPreviewService {
   ) {}
 
   async preview(puidInput: string): Promise<BookingOutPreviewData> {
+    const started = Date.now();
     const puid = puidInput.trim().toUpperCase().replace(/^VL/i, '');
     this.validatePuid(puid);
 
+    const lookupStarted = Date.now();
     const lookup = await this.inventoryLookup.lookupByPuid(puid);
+    this.logger.debug(`booking-out lookup ${Date.now() - lookupStarted}ms`);
     if (lookup.status !== 'success' || !lookup.data) {
       throw new BadRequestException(
         lookup.message ??
@@ -59,10 +62,12 @@ export class BookingOutPreviewService {
 
     let cpkEffectiveRemain: number | null = null;
     try {
+      const cpkStarted = Date.now();
       const station = await this.cpkService.stationInvenCheck({
         PUID: puid,
         PartNumber: d.HanaPart || undefined,
       });
+      this.logger.debug(`booking-out stationInvenCheck ${Date.now() - cpkStarted}ms`);
       if (station && typeof station === 'object') {
         const qty = Number(
           (station as Record<string, unknown>).Quantity ??
@@ -117,6 +122,7 @@ export class BookingOutPreviewService {
       },
     };
 
+    this.logger.debug(`booking-out preview finished in ${Date.now() - started}ms`);
     return found;
   }
 

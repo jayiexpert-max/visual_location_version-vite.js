@@ -21,6 +21,7 @@ export function SearchPage() {
   const [message, setMessage] = useState<{ kind: 'success' | 'warning'; html: string } | null>(
     null,
   );
+  const [rackView, setRackView] = useState<'grid' | 'table'>('grid');
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -154,17 +155,24 @@ export function SearchPage() {
         />
       )}
 
-      <div className="fx-scan-toolbar">
-        <button type="button" className="fx-btn fx-btn-secondary" onClick={handleClear}>
-          <i className="fas fa-eraser" /> {t('pages:searchClear')}
-        </button>
-        <button
-          type="button"
-          className="fx-btn fx-btn-danger"
-          onClick={() => void handleResetLights()}
-        >
-          <i className="fas fa-lightbulb" /> {t('pages:searchResetLights')}
-        </button>
+      <div className="fx-scan-toolbar fx-scan-toolbar--search">
+        <div className="fx-search-view-toggle fx-search-view-toggle--right">
+          <button
+            type="button"
+            className="fx-btn fx-btn-secondary"
+            onClick={() => setRackView((current) => (current === 'grid' ? 'table' : 'grid'))}
+          >
+            <i className={`fas ${rackView === 'grid' ? 'fa-table' : 'fa-th-large'}`} />{' '}
+            {rackView === 'grid' ? t('pages:rackViewTable') : t('pages:rackViewGrid')}
+          </button>
+          <button
+            type="button"
+            className="fx-btn fx-btn-danger"
+            onClick={() => void handleResetLights()}
+          >
+            <i className="fas fa-lightbulb" /> {t('pages:searchResetLights')}
+          </button>
+        </div>
       </div>
 
       <form id="searchForm" className="fade-in" onSubmit={handleSubmit}>
@@ -201,16 +209,21 @@ export function SearchPage() {
             >
               <i className="fas fa-search" /> {t('common:search')}
             </button>
+            <button type="button" className="fx-btn fx-btn-secondary" onClick={handleClear}>
+              <i className="fas fa-eraser" /> {t('pages:searchClear')}
+            </button>
           </div>
         </div>
       </form>
 
       <section className="fx-rack-section">
-        <h3 className="fx-section-title">{t('pages:searchRackOverview')}</h3>
         <RackOverviewSection
           highlightBoxId={highlightBoxId}
           highlightSlotId={highlightSlotId}
           showTitle={false}
+          view={rackView}
+          onViewChange={setRackView}
+          showToolbar={false}
         />
       </section>
     </div>

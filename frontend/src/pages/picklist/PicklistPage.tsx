@@ -45,6 +45,7 @@ import {
 } from '../../utils/picklistIssueUtils';
 import { isCpkSuccess, type CpkResponseBody } from '../../types/cpk';
 import { usePicklistRealtimeSync } from '../../hooks/usePicklistRealtimeSync';
+import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
 const POLL_MS = 45_000;
 
@@ -119,6 +120,7 @@ export function PicklistPage() {
   const { t } = useTranslation(['pages', 'common']);
   const { user } = useAuth();
   const operator = user?.username ?? '';
+  const serviceReadiness = useServiceReadiness();
 
   const puidRef = useRef<HTMLInputElement>(null);
   const kitsNoteRef = useRef<HTMLTextAreaElement>(null);
@@ -414,6 +416,10 @@ export function PicklistPage() {
   const handleIssue = async () => {
     const puid = normalizePuid(puidInput);
     setPuidInput(puid);
+    if (!serviceReadiness.cpkOk) {
+      showAlert('issue', 'warning', t('pages:serviceNotReady'));
+      return;
+    }
     if (!selectedPicklistId) {
       showAlert('issue', 'warning', t('pages:picklistSelectFirst'));
       return;
@@ -472,6 +478,7 @@ export function PicklistPage() {
 
       showAlert('issue', 'success', t('pages:picklistIssuedOk', { puid }));
       if (data.fifo_renewal_notice && data.fifo) {
+        showAlert('issue', 'warning', t('pages:picklistFifoRenewalNotice'));
         openFifoModal(data.fifo, puid);
       }
       setSelectedPuid(puid);

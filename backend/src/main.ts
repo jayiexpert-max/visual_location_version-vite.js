@@ -10,6 +10,17 @@ async function bootstrap(): Promise<void> {
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
   const nodeEnv = configService.get<string>('app.nodeEnv', 'development');
+  const logLevelEnv = (process.env.LOG_LEVEL ?? '').trim().toLowerCase();
+
+  if (logLevelEnv) {
+    const levels = logLevelEnv
+      .split(',')
+      .map((level) => level.trim())
+      .filter(Boolean) as Array<'log' | 'error' | 'warn' | 'debug' | 'verbose'>;
+    Logger.overrideLogger(levels);
+  } else if (nodeEnv !== 'production') {
+    Logger.overrideLogger(['log', 'warn', 'error', 'debug']);
+  }
 
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 

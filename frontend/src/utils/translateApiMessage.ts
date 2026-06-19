@@ -12,6 +12,8 @@ const EXACT_KEYS: Record<string, string> = {
   'CPK unreachable — local save only; sync UpdatePUIDStatus when CPK is back.':
     'pages:apiMsgCpkUnreachable',
   'Skipped CPK receive (already received in CPK).': 'pages:apiMsgCpkReceiveSkipped',
+  'Received expired material — send for shelf-life extension.':
+    'pages:apiMsgExpiredMaterialReceived',
   'CPK receive confirmation failed': 'pages:apiMsgCpkReceiveFailed',
   'CPK request timed out': 'pages:apiMsgCpkTimeout',
   'IssuePUIDToPicklist failed': 'pages:apiMsgPicklistIssueFailed',

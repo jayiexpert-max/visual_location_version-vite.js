@@ -206,13 +206,6 @@ export function SystemHealthPage() {
               </HealthCard>
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-              <HealthCard title={t('pages:healthPdService')} ok={isComponentOk(snapshot.pdservice)} loading={loading} t={t}>
-                <Typography variant="body2" color="text.secondary">
-                  {t('pages:healthLatency')}: {snapshot.pdservice?.latencyMs ?? '—'} ms
-                </Typography>
-              </HealthCard>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <HealthCard
                 title={t('pages:healthHostResources')}
                 ok={

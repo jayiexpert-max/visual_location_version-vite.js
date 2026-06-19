@@ -7,7 +7,8 @@ import * as ioService from '../../services/ioService';
 import * as tvService from '../../services/tvService';
 import { getErrorMessage } from '../../services/apiClient';
 import { translateApiMessage, translateApiMessages } from '../../utils/translateApiMessage';
-import { normalizePuidInput } from '../../utils/reservationUtils';
+import { formatExpireDate, isPuidExpired, normalizePuidInput } from '../../utils/reservationUtils';
+import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
 const HIGHLIGHT_COUNTDOWN_SEC = 30;
 
@@ -36,6 +37,7 @@ function formatLocationLine(meta: FetchedMeta): string {
 export function ReceiveReturnPage() {
   const { t } = useTranslation(['pages', 'common']);
   const { user } = useAuth();
+  const serviceReadiness = useServiceReadiness();
   const [searchParams] = useSearchParams();
   const resNoFromUrl = searchParams.get('res_no')?.trim() ?? '';
 
@@ -206,6 +208,10 @@ export function ReceiveReturnPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (saveLoading || fetchLoading || !meta || !user) return;
+    if (!serviceReadiness.cpkOk) {
+      setFlashMsg({ kind: 'warning', text: t('pages:serviceNotReady') });
+      return;
+    }
 
     const normalized = normalizePuidInput(puid);
     const remain = Number(qtyRemain);
@@ -269,8 +275,8 @@ export function ReceiveReturnPage() {
       setSuccessHighlight(meta);
       setCountdown(HIGHLIGHT_COUNTDOWN_SEC);
 
-      try {
-        await tvService.setTvHighlight({
+      void tvService
+        .setTvHighlight({
           productName: hanaPart.trim(),
           puid: normalized,
           boxId: meta.box_id,
@@ -281,19 +287,15 @@ export function ReceiveReturnPage() {
           boxCode: meta.Loc_Box,
           qty: remain,
           actionType: 'receive',
-        });
-      } catch {
-        // non-fatal
-      }
-      try {
-        if (meta.box_id) {
-          await ioService.ioHighlight({
+        })
+        .catch(() => undefined);
+      if (meta.box_id) {
+        void ioService
+          .ioHighlight({
             boxId: meta.box_id,
             slotNo: meta.Loc_Slot,
-          });
-        }
-      } catch {
-        // non-fatal
+          })
+          .catch(() => undefined);
       }
     } catch (err) {
       setFlashMsg({
@@ -311,7 +313,10 @@ export function ReceiveReturnPage() {
     Boolean(im.trim()) &&
     Boolean(hanaPart.trim()) &&
     Number(qtyRemain) > 0 &&
-    !busy;
+    !busy &&
+    serviceReadiness.cpkOk &&
+    !serviceReadiness.loading;
+  const expired = meta ? isPuidExpired(meta.ExpirationDate) : false;
 
   return (
     <div className="fx-scan-page">
@@ -330,6 +335,15 @@ export function ReceiveReturnPage() {
           className={`fx-page-message message ${fetchMsg.kind === 'success' ? 'success' : 'warning'}`}
           dangerouslySetInnerHTML={{ __html: fetchMsg.html }}
         />
+      )}
+
+      {meta && expired && (
+        <div className="fx-page-message message warning">
+          {t('pages:resExpiredPuidNotice', {
+            puid,
+            date: formatExpireDate(meta.ExpirationDate),
+          })}
+        </div>
       )}
 
       {successHighlight && flashMsg?.kind === 'success' && (

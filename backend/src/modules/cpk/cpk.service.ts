@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { CpkHttpClient } from './cpk-http.client';
 import { CpkTokenService } from './cpk-token.service';
@@ -28,6 +29,8 @@ import {
 
 @Injectable()
 export class CpkService {
+  private readonly logger = new Logger(CpkService.name);
+
   constructor(
     private readonly cpkHttpClient: CpkHttpClient,
     private readonly cpkTokenService: CpkTokenService,
@@ -285,8 +288,12 @@ export class CpkService {
     logical: CpkLogicalEndpoint,
     body: Record<string, unknown>,
   ): Promise<CpkHttpResult> {
+    const started = Date.now();
     const uidResult = await this.cpkTokenService.getPublicUid(false);
     if (!uidResult.ok || !uidResult.publicUid) {
+      this.logger.warn(
+        `CPK ${logical} aborted before POST because PublicUID was unavailable (${Date.now() - started}ms)`,
+      );
       return {
         ok: false,
         httpCode: 0,
@@ -300,6 +307,9 @@ export class CpkService {
 
     const payload = { ...body, PublicUID: uidResult.publicUid };
     let result = await this.cpkHttpClient.post(logical, payload);
+    this.logger.debug(
+      `CPK ${logical} first POST completed in ${Date.now() - started}ms (publicUid cached=${true})`,
+    );
 
     if (this.cpkTokenService.isPublicUidError(result)) {
       await this.cpkTokenService.clearCache();
@@ -319,8 +329,12 @@ export class CpkService {
 
       payload.PublicUID = refreshed.publicUid;
       result = await this.cpkHttpClient.post(logical, payload);
+      this.logger.debug(
+        `CPK ${logical} retry POST completed in ${Date.now() - started}ms after PublicUID refresh`,
+      );
     }
 
+    this.logger.debug(`CPK ${logical} finished in ${Date.now() - started}ms`);
     return result;
   }
 

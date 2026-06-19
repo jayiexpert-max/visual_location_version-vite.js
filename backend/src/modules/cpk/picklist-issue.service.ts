@@ -43,6 +43,7 @@ export class PicklistIssueService {
     operator: string,
     user: AuthenticatedUser,
   ): Promise<PicklistIssueResult> {
+    const started = Date.now();
     const normalized = this.fifoService.normalizePuid(puid);
     if (!picklistId.trim() || !normalized) {
       throw new BadRequestException('PicklistID and PUID are required');
@@ -116,6 +117,8 @@ export class PicklistIssueService {
       timestamp: new Date().toISOString(),
     });
 
+    this.logger.debug(`picklist issue completed in ${Date.now() - started}ms`);
+
     return response;
   }
 
@@ -126,6 +129,7 @@ export class PicklistIssueService {
     puidInfo: Record<string, unknown> | undefined,
     operator: string,
   ): Promise<boolean> {
+    const started = Date.now();
     if (userId <= 0) return false;
 
     let hanaPart = String(puidInfo?.PartNumber ?? puidInfo?.HanaPart ?? '').trim();
@@ -159,6 +163,8 @@ export class PicklistIssueService {
       remark,
     });
 
+    this.logger.debug(`picklist log finished in ${Date.now() - started}ms`);
+
     return true;
   }
 
@@ -166,6 +172,7 @@ export class PicklistIssueService {
     ok: boolean;
     message?: string;
   }> {
+    const started = Date.now();
     const row = await this.inventoryReceiveRepository
       .getRepository()
       .createQueryBuilder('ir')
@@ -178,6 +185,7 @@ export class PicklistIssueService {
       .getOne();
 
     if (!row) {
+      this.logger.debug(`picklist withdraw miss in ${Date.now() - started}ms`);
       return { ok: false, message: 'PUID not found in local stock or already withdrawn' };
     }
 
@@ -206,6 +214,7 @@ export class PicklistIssueService {
       }
     });
 
+    this.logger.debug(`picklist withdraw finished in ${Date.now() - started}ms`);
     return { ok: true };
   }
 }

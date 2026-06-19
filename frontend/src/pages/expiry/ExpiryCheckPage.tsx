@@ -18,7 +18,7 @@ function normalizeResNo(value: string): string {
 }
 
 export function ExpiryCheckPage() {
-  const { t } = useTranslation(['pages', 'common']);
+  const { t, i18n } = useTranslation(['pages', 'common']);
   const { exportExcel } = useExport();
 
   const [loading, setLoading] = useState(false);
@@ -181,6 +181,20 @@ export function ExpiryCheckPage() {
   }
 
   const syncBtnLabel = resNo ? t('pages:expirySyncThisRes') : t('pages:expirySyncAll');
+  const isThai = i18n.language.startsWith('th');
+
+  const translateStatusText = (value?: string): string => {
+    const raw = value?.trim();
+    if (!raw) return '—';
+    if (!isThai) return raw;
+
+    const normalized = raw.toLowerCase();
+    if (normalized.includes('expired')) return 'หมดอายุ';
+    if (normalized.includes('soon') || normalized.includes('expiring')) return 'ใกล้หมดอายุ';
+    if (normalized.includes('normal')) return 'ปกติ';
+    if (normalized.includes('all stock')) return 'สต็อกทั้งหมด';
+    return raw;
+  };
 
   return (
     <>
@@ -407,7 +421,7 @@ export function ExpiryCheckPage() {
                     </td>
                     <td className="col-status">
                       <span className={`status-badge ${statusClass}`}>
-                        <i className={`fas ${icon}`}></i> {row.statusText}
+                        <i className={`fas ${icon}`}></i> {translateStatusText(row.statusText)}
                       </span>
                     </td>
                   </tr>

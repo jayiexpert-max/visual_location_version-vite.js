@@ -16,6 +16,7 @@ import * as reservationsService from '../../services/reservationsService';
 import { getErrorMessage } from '../../services/apiClient';
 import { translateApiMessages } from '../../utils/translateApiMessage';
 import { useReservationRealtimeSync } from '../../hooks/useReservationRealtimeSync';
+import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 import {
   formatExpireDate,
   formatPuidQtyRemain,
@@ -57,6 +58,7 @@ export function ReceiveReservationPage() {
   const { t } = useTranslation(['pages', 'common']);
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const serviceReadiness = useServiceReadiness();
 
   const [activeResNo, setActiveResNo] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -74,6 +76,7 @@ export function ReceiveReservationPage() {
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cpkWarning, setCpkWarning] = useState<string | null>(null);
+  const autoSyncedRes = useRef<Set<string>>(new Set());
 
   const puidInputRef = useRef<HTMLInputElement>(null);
 
@@ -180,6 +183,9 @@ export function ReceiveReservationPage() {
   const saveMutation = useMutation({
     mutationFn: async (payload: VerifiedPuid) => {
       if (!user || !currentResData) throw new Error('Missing context');
+      if (!serviceReadiness.cpkOk) {
+        throw new Error(t('pages:serviceNotReady'));
+      }
 
       const meta = payload.meta;
       const slotId = meta.slot_id;
@@ -212,8 +218,8 @@ export function ReceiveReservationPage() {
 
       if (verified?.meta) {
         const m = verified.meta;
-        try {
-          await tvService.setTvHighlight({
+        void tvService
+          .setTvHighlight({
             productName: verified.hanaPart,
             puid: verified.puid,
             boxId: m.box_id,
@@ -224,14 +230,33 @@ export function ReceiveReservationPage() {
             boxCode: m.Loc_Box,
             qty: m.QtyRemain ?? m.Qty ?? 0,
             actionType: 'receive',
-          });
-        } catch {
-          // non-fatal
-        }
+          })
+          .catch(() => undefined);
       }
 
       if (activeResNo) {
-        await loadDetail(activeResNo);
+        void loadDetail(activeResNo);
+        void (async () => {
+          const resNo = resNoKey(activeResNo);
+          if (!resNo || autoSyncedRes.current.has(resNo)) return;
+          try {
+            const detail = await reservationsService.getReservationDetail(resNo);
+            if (detail.status !== 'success' || !detail.data) return;
+            const items = detail.data.Items ?? [];
+            const completed = items.length > 0 && items.every((item) => {
+              const puids = item.PUIDList ?? [];
+              return puids.length > 0 && puids.every((p) => isPuidReceived(p));
+            });
+            if (!completed) return;
+
+            autoSyncedRes.current.add(resNo);
+            await inventoryService.syncExpiration({ resNo });
+            setCpkWarning(t('pages:expirySyncCompleted'));
+            window.setTimeout(() => setCpkWarning(null), 10000);
+          } catch {
+            // auto sync is best-effort; never block the receive success flow
+          }
+        })();
       }
       setVerified(null);
       setVerifyError(null);
@@ -242,6 +267,13 @@ export function ReceiveReservationPage() {
       setVerifyError(getErrorMessage(err, t('common:error'), t));
     },
   });
+
+  const canSaveReceive = Boolean(
+    verified &&
+      !saveMutation.isPending &&
+      !serviceReadiness.loading &&
+      serviceReadiness.cpkOk,
+  );
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -566,6 +598,11 @@ export function ReceiveReservationPage() {
                               className={`fx-res-field__value${verified.isExpired ? ' fx-res-field__value--danger' : ''}`}
                             >
                               {formatExpireDate(verified.expiration)}
+                              {verified.isExpired && (
+                                <span className="fx-res-expiry-badge">
+                                  {t('pages:resExpiredTitle')}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="fx-res-field fx-res-location">
@@ -587,6 +624,14 @@ export function ReceiveReservationPage() {
                           {t('pages:resCpkAlreadyReceived')}
                         </div>
                       )}
+                      {verified.isExpired && (
+                        <div className="fx-res-banner fx-res-banner--warning">
+                          {t('pages:resExpiredPuidNotice', {
+                            puid: verified.puid,
+                            date: formatExpireDate(verified.expiration),
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -594,10 +639,15 @@ export function ReceiveReservationPage() {
 
               {verified && (
                 <div className="save-btn-section" style={{ display: 'block' }}>
+                  {(!serviceReadiness.cpkOk) && (
+                    <div className="fx-page-message message warning" style={{ marginBottom: '0.75rem' }}>
+                      {t('pages:serviceNotReady')}
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="btn-receive btn-receive--success"
-                    disabled={saveMutation.isPending}
+                    disabled={!canSaveReceive}
                     onClick={() => verified && saveMutation.mutate(verified)}
                   >
                     {saveMutation.isPending ? (

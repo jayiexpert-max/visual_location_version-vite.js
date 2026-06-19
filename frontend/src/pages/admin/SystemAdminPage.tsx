@@ -794,7 +794,7 @@ export function SystemAdminPage() {
           <span className="admin-overview-icon"><i className="fas fa-heartbeat"></i></span>
           <span>
             <strong>เช็ค Service</strong>
-            <small>CPK, PDService และ latency แยก endpoint</small>
+            <small>CPK และ latency แยก endpoint</small>
           </span>
         </button>
         <Button component={RouterLink} to="/app/admin/iot" variant="outlined" className="admin-overview-link">
@@ -1358,15 +1358,15 @@ export function SystemAdminPage() {
 
               <div style={{ flex: '1 1 300px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <span style={{ fontWeight: 700 }}>PDService</span>
-                  <span className={`fx-badge ${pdsHealth?.status === 'ok' ? 'fx-badge-success' : 'fx-badge-danger'}`}>
-                    {pdsHealth?.status ?? '—'}
+                  <span style={{ fontWeight: 700 }}>CPK</span>
+                  <span className={`fx-badge ${cpkHealth?.status === 'ok' ? 'fx-badge-success' : 'fx-badge-danger'}`}>
+                    {cpkHealth?.status ?? '—'}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.9rem', color: '#475569' }}>
-                  <p style={{ margin: '0 0 4px' }}>Latency: {pdsHealth?.latencyMs ?? '—'} ms</p>
-                  <p style={{ margin: '0 0 4px' }}>HTTP Code: {pdsHealth?.httpCode ?? '—'}</p>
-                  {pdsHealth?.message && <p style={{ margin: '4px 0 0', color: '#ef4444' }}>{pdsHealth.message}</p>}
+                  <p style={{ margin: '0 0 4px' }}>Latency: {cpkHealth?.latencyMs ?? '—'} ms</p>
+                  <p style={{ margin: '0 0 4px' }}>Version: {cpkVersionText}</p>
+                  {cpkHealth?.message && <p style={{ margin: '4px 0 0', color: '#ef4444' }}>{cpkHealth.message}</p>}
                 </div>
               </div>
             </div>

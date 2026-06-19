@@ -6,6 +6,7 @@ import { StockLog } from '../../entities/stock-log.entity';
 import { CpkModule } from '../cpk/cpk.module';
 import { IoModule } from '../io/io.module';
 import { PdserviceModule } from '../pdservice/pdservice.module';
+import { MaterialsModule } from '../materials/materials.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { TvModule } from '../tv/tv.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
@@ -31,6 +32,7 @@ import { ExpirationSyncService } from './services/expiration-sync.service';
     WarehouseModule,
     forwardRef(() => CpkModule),
     PdserviceModule,
+    MaterialsModule,
     TvModule,
     IoModule,
     RealtimeModule,

@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import * as cpkService from '../../services/cpkService';
 import { getErrorMessage } from '../../services/apiClient';
 import '../../styles/booking-out-puid.css';
+import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
 type Destination = 'STORE' | 'OTHER';
 
@@ -41,6 +42,7 @@ export function BookingOutPage() {
   const { t, i18n } = useTranslation(['pages', 'common']);
   const isEn = i18n.language.startsWith('en');
   const { user } = useAuth();
+  const serviceReadiness = useServiceReadiness();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [puid, setPuid] = useState('');
@@ -59,6 +61,10 @@ export function BookingOutPage() {
     ? eligibility?.blockers ?? []
     : eligibility?.blockers_th ?? eligibility?.blockers ?? [];
   const canSubmit = Boolean(preview && eligibility?.eligible && puid.trim());
+  const canSubmitReady =
+    canSubmit &&
+    serviceReadiness.cpkOk &&
+    !serviceReadiness.loading;
   const tone = previewTone(previewLoading, previewError, eligibility?.eligible, Boolean(preview));
 
   useEffect(() => {
@@ -323,8 +329,11 @@ export function BookingOutPage() {
           <button
             type="button"
             className="fx-btn fx-btn-primary fx-btn-lg fx-booking-submit"
-            disabled={!canSubmit || submitMutation.isPending}
-            onClick={() => setConfirmOpen(true)}
+            disabled={!canSubmitReady || submitMutation.isPending}
+            onClick={() => {
+              if (!serviceReadiness.cpkOk) return;
+              setConfirmOpen(true);
+            }}
           >
             {submitMutation.isPending ? (
               <CircularProgress size={20} color="inherit" />
@@ -365,7 +374,10 @@ export function BookingOutPage() {
         })}
         confirmLabel={t('pages:bookingOutSubmit')}
         loading={submitMutation.isPending}
-        onConfirm={() => submitMutation.mutate()}
+        onConfirm={() => {
+          if (!serviceReadiness.cpkOk) return;
+          submitMutation.mutate();
+        }}
         onCancel={() => setConfirmOpen(false)}
       />
     </>

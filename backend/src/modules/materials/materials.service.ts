@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -24,6 +25,8 @@ export type { MaterialImportResult };
 
 @Injectable()
 export class MaterialsService {
+  private readonly logger = new Logger(MaterialsService.name);
+
   constructor(
     @InjectRepository(Material)
     private readonly materialRepository: Repository<Material>,
@@ -152,6 +155,53 @@ export class MaterialsService {
     });
 
     return { added, updated, total: added + updated };
+  }
+
+  async upsertFromInventoryReceive(input: {
+    materialCode: string;
+    description?: string | null;
+    remark?: string | null;
+  }): Promise<{ created: boolean; updated: boolean }> {
+    const materialCode = input.materialCode.trim();
+    if (!materialCode) {
+      return { created: false, updated: false };
+    }
+
+    const description = input.description?.trim() || null;
+    const remark = input.remark?.trim() || null;
+
+    const existing = await this.materialRepository.findOne({
+      where: { materialCode },
+    });
+
+    if (!existing) {
+      await this.materialRepository.save(
+        this.materialRepository.create({
+          materialCode,
+          description,
+          remark,
+        }),
+      );
+      this.logger.debug(`Material auto-created from receive: ${materialCode}`);
+      return { created: true, updated: false };
+    }
+
+    let changed = false;
+    if ((!existing.description || !existing.description.trim()) && description) {
+      existing.description = description;
+      changed = true;
+    }
+    if ((!existing.remark || !existing.remark.trim()) && remark) {
+      existing.remark = remark;
+      changed = true;
+    }
+
+    if (changed) {
+      await this.materialRepository.save(existing);
+      this.logger.debug(`Material auto-updated from receive: ${materialCode}`);
+    }
+
+    return { created: false, updated: changed };
   }
 
   private async requireMaterial(id: number): Promise<Material> {

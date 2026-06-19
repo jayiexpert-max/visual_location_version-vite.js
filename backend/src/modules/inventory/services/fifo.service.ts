@@ -4,7 +4,7 @@ import { InventoryReceive } from '../../../entities/inventory-receive.entity';
 import { AppSettingsService } from '../../warehouse/services/app-settings.service';
 import { InventoryReceiveRepository } from '../repositories/inventory-receive.repository';
 
-const NEAR_EXPIRY_DAYS = 30;
+const NEAR_EXPIRY_DAYS = 7;
 
 export interface FifoExpiredRoll {
   puid: string;

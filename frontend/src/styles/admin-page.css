@@ -416,6 +416,8 @@
   font-size: 0.95rem;
   transition: all 0.2s;
   background: #fff;
+  min-height: 44px;
+  height: 44px;
 }
 
 .admin-field input:focus,
@@ -469,6 +471,14 @@
 .admin-actions {
   display: flex;
   gap: 8px;
+  align-items: stretch;
+}
+
+.admin-form-inline .admin-actions .fx-btn {
+  min-height: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .btn-icon {
