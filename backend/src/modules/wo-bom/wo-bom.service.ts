@@ -4,9 +4,10 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { InventoryReceive } from '../../entities/inventory-receive.entity';
 import { Material } from '../../entities/material.entity';
+import { toDateOnlyString } from '../../common/utils/date-only.util';
 import { CpkHttpClient } from '../cpk/cpk-http.client';
 import type { CpkResponseBody } from '../cpk/interfaces/cpk.types';
 
@@ -41,6 +42,26 @@ export interface WoBomPlanResult {
   workOrder: string;
   info: WoBomPlanInfo;
   lines: WoBomPlanLine[];
+}
+
+interface ParsedBomLine {
+  itemList: unknown;
+  opCode: unknown;
+  materialCode: string;
+  requiredQty: number;
+}
+
+interface StockAggregate {
+  systemQty: number;
+  usableQty: number;
+  puidCount: number;
+  recommendedPuid: string | null;
+  earliestExpiration: string | null;
+  expiryStatus: 'ok' | 'near' | 'expired' | 'unknown';
+  expiredRolls: number;
+  nearExpiryRolls: number;
+  substoreStockQty: number;
+  substorePuidCount: number;
 }
 
 function asList(value: unknown): unknown[] {
@@ -95,8 +116,8 @@ export class WoBomService {
       );
     }
 
-    const lines: WoBomPlanLine[] = [];
     const operations = asList(data?.Operations) as Record<string, unknown>[];
+    const parsedLines: ParsedBomLine[] = [];
 
     for (const op of operations) {
       if (!op || typeof op !== 'object') continue;
@@ -107,40 +128,57 @@ export class WoBomService {
         if (!materialCode) continue;
         const requiredQty = parseRequiredQty(mat);
         if (requiredQty === null) continue;
-
-        const material = await this.materialRepo.findOne({
-          where: { materialCode },
-        });
-        const stock = await this.fetchSystemStock(materialCode);
-        const substore = await this.fetchSubstoreStock(materialCode);
-
-        lines.push({
+        parsedLines.push({
           itemList: mat.MatItem ?? null,
           opCode: op.OpnCode ?? null,
           materialCode,
-          description: material?.description ?? '—',
-          requiredPerUnit: requiredQty,
           requiredQty,
-          systemStockQty: stock.systemQty,
-          usableStockQty: stock.usableQty,
-          puidCount: stock.puidCount,
-          recommendedPuid: stock.recommendedPuid,
-          earliestExpiration: stock.earliestExpiration,
-          expiryStatus: stock.expiryStatus,
-          expiredRolls: stock.expiredRolls,
-          nearExpiryRolls: stock.nearExpiryRolls,
-          substoreStockQty: substore.total,
-          substorePuidCount: substore.puidCount,
-          sufficient: stock.usableQty >= requiredQty,
         });
       }
     }
 
-    if (!lines.length) {
+    if (!parsedLines.length) {
       throw new BadGatewayException(
         'No BOM lines with numeric required quantity (MatReqQty)',
       );
     }
+
+    const materialCodes = [...new Set(parsedLines.map((line) => line.materialCode))];
+    const [materials, stockMap] = await Promise.all([
+      this.materialRepo.find({
+        where: { materialCode: In(materialCodes) },
+      }),
+      this.fetchStockAggregates(materialCodes),
+    ]);
+
+    const materialMap = new Map(
+      materials.map((material) => [material.materialCode, material]),
+    );
+
+    const lines: WoBomPlanLine[] = parsedLines.map((line) => {
+      const material = materialMap.get(line.materialCode);
+      const stock = stockMap.get(line.materialCode) ?? this.emptyStockAggregate();
+
+      return {
+        itemList: line.itemList,
+        opCode: line.opCode,
+        materialCode: line.materialCode,
+        description: material?.description ?? '—',
+        requiredPerUnit: line.requiredQty,
+        requiredQty: line.requiredQty,
+        systemStockQty: stock.systemQty,
+        usableStockQty: stock.usableQty,
+        puidCount: stock.puidCount,
+        recommendedPuid: stock.recommendedPuid,
+        earliestExpiration: stock.earliestExpiration,
+        expiryStatus: stock.expiryStatus,
+        expiredRolls: stock.expiredRolls,
+        nearExpiryRolls: stock.nearExpiryRolls,
+        substoreStockQty: stock.substoreStockQty,
+        substorePuidCount: stock.substorePuidCount,
+        sufficient: stock.usableQty >= line.requiredQty,
+      };
+    });
 
     return {
       workOrder: wo,
@@ -154,81 +192,88 @@ export class WoBomService {
     };
   }
 
-  private async fetchSystemStock(hanaPart: string): Promise<{
-    systemQty: number;
-    usableQty: number;
-    puidCount: number;
-    recommendedPuid: string | null;
-    earliestExpiration: string | null;
-    expiryStatus: 'ok' | 'near' | 'expired' | 'unknown';
-    expiredRolls: number;
-    nearExpiryRolls: number;
-  }> {
+  private emptyStockAggregate(): StockAggregate {
+    return {
+      systemQty: 0,
+      usableQty: 0,
+      puidCount: 0,
+      recommendedPuid: null,
+      earliestExpiration: null,
+      expiryStatus: 'unknown',
+      expiredRolls: 0,
+      nearExpiryRolls: 0,
+      substoreStockQty: 0,
+      substorePuidCount: 0,
+    };
+  }
+
+  private async fetchStockAggregates(
+    hanaParts: string[],
+  ): Promise<Map<string, StockAggregate>> {
+    if (!hanaParts.length) return new Map();
+
     const rows = await this.inventoryRepo
       .createQueryBuilder('ir')
-      .where('ir.hanaPart = :hanaPart', { hanaPart })
+      .where('ir.hanaPart IN (:...hanaParts)', { hanaParts })
       .andWhere('ir.qtyRemain > 0')
       .andWhere("ir.statusName NOT IN ('Withdrawn', 'Empty', 'Is empty')")
+      .orderBy('ir.hanaPart', 'ASC')
       .orderBy('CASE WHEN ir.expirationDate IS NULL THEN 1 ELSE 0 END', 'ASC')
       .addOrderBy('ir.expirationDate', 'ASC')
       .addOrderBy('ir.id', 'ASC')
       .getMany();
 
-    let systemQty = 0;
-    let usableQty = 0;
-    let expiredRolls = 0;
-    let nearExpiryRolls = 0;
     const today = new Date().toISOString().slice(0, 10);
     const nearDate = new Date();
     nearDate.setDate(nearDate.getDate() + 7);
     const nearStr = nearDate.toISOString().slice(0, 10);
+    const aggregates = new Map<string, StockAggregate>();
+    const seenPuids = new Map<string, Set<string>>();
+    const seenSubstorePuids = new Map<string, Set<string>>();
 
     for (const row of rows) {
+      const hanaPart = row.hanaPart?.trim();
+      if (!hanaPart) continue;
+
+      const aggregate =
+        aggregates.get(hanaPart) ?? this.emptyStockAggregate();
+      const puids = seenPuids.get(hanaPart) ?? new Set<string>();
+      const substorePuids =
+        seenSubstorePuids.get(hanaPart) ?? new Set<string>();
       const qty = Number(row.qtyRemain ?? 0);
-      systemQty += qty;
-      const exp = row.expirationDate ? String(row.expirationDate).slice(0, 10) : null;
-      if (!exp || exp >= today) usableQty += qty;
-      if (exp && exp < today) expiredRolls += 1;
-      else if (exp && exp >= today && exp <= nearStr) nearExpiryRolls += 1;
+      aggregate.systemQty += qty;
+      const exp = toDateOnlyString(row.expirationDate);
+      if (!exp || exp >= today) aggregate.usableQty += qty;
+      if (exp && exp < today) aggregate.expiredRolls += 1;
+      else if (exp && exp >= today && exp <= nearStr) aggregate.nearExpiryRolls += 1;
+
+      if (!aggregate.recommendedPuid) {
+        aggregate.recommendedPuid = row.puid ?? null;
+        aggregate.earliestExpiration = exp;
+        if (!exp) aggregate.expiryStatus = 'unknown';
+        else if (exp < today) aggregate.expiryStatus = 'expired';
+        else if (exp <= nearStr) aggregate.expiryStatus = 'near';
+        else aggregate.expiryStatus = 'ok';
+      }
+
+      if (row.puid) {
+        puids.add(row.puid);
+      }
+
+      if (row.machineName?.includes('Kitting')) {
+        aggregate.substoreStockQty += qty;
+        if (row.puid) {
+          substorePuids.add(row.puid);
+        }
+      }
+
+      aggregate.puidCount = puids.size;
+      aggregate.substorePuidCount = substorePuids.size;
+      aggregates.set(hanaPart, aggregate);
+      seenPuids.set(hanaPart, puids);
+      seenSubstorePuids.set(hanaPart, substorePuids);
     }
 
-    const fifo = rows[0];
-    const fifoExp = fifo?.expirationDate
-      ? String(fifo.expirationDate).slice(0, 10)
-      : null;
-    let expiryStatus: 'ok' | 'near' | 'expired' | 'unknown' = 'unknown';
-    if (fifoExp) {
-      if (fifoExp < today) expiryStatus = 'expired';
-      else if (fifoExp <= nearStr) expiryStatus = 'near';
-      else expiryStatus = 'ok';
-    }
-
-    return {
-      systemQty,
-      usableQty,
-      puidCount: new Set(rows.map((r) => r.puid).filter(Boolean)).size,
-      recommendedPuid: fifo?.puid ?? null,
-      earliestExpiration: fifoExp,
-      expiryStatus,
-      expiredRolls,
-      nearExpiryRolls,
-    };
-  }
-
-  private async fetchSubstoreStock(hanaPart: string): Promise<{ total: number; puidCount: number }> {
-    const row = await this.inventoryRepo
-      .createQueryBuilder('ir')
-      .select('COALESCE(SUM(ir.qtyRemain), 0)', 'total')
-      .addSelect('COUNT(DISTINCT ir.puid)', 'puidCount')
-      .where('ir.hanaPart = :hanaPart', { hanaPart })
-      .andWhere('ir.qtyRemain > 0')
-      .andWhere("ir.statusName NOT IN ('Withdrawn', 'Empty')")
-      .andWhere('ir.machineName LIKE :like', { like: '%Kitting%' })
-      .getRawOne<{ total: string; puidCount: string }>();
-
-    return {
-      total: parseFloat(row?.total ?? '0') || 0,
-      puidCount: parseInt(row?.puidCount ?? '0', 10) || 0,
-    };
+    return aggregates;
   }
 }

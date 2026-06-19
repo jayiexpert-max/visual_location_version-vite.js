@@ -7,8 +7,10 @@ import { BoxRepository } from '../repositories/box.repository';
 import {
   BoxLayoutCellDto,
   BoxLayoutProductDto,
+  BoxLayoutPuidDto,
   BoxLayoutResponseDto,
 } from '../dto/box-layout-response.dto';
+import { toDateOnlyString } from '../../../common/utils/date-only.util';
 
 export interface ParsedLayout {
   rows: number;
@@ -123,8 +125,8 @@ export class BoxLayoutService {
   private async fetchPuidsForBox(
     box: Box,
     slotMap: Map<number, Slot>,
-  ): Promise<Map<number, string[]>> {
-    const result = new Map<number, string[]>();
+  ): Promise<Map<number, BoxLayoutPuidDto[]>> {
+    const result = new Map<number, BoxLayoutPuidDto[]>();
     const rackName = box.level?.rack?.name ?? '';
     const levelNo = box.level?.levelNo ?? 0;
     const boxCode = box.boxCode ?? '';
@@ -147,9 +149,11 @@ export class BoxLayoutService {
     return result;
   }
 
-  private async queryPuidsBySlot(slotId: number, hanaPart: string): Promise<string[]> {
-    const rows = await this.dataSource.query<Array<{ PUID: string }>>(
-      `SELECT DISTINCT ir.PUID
+  private async queryPuidsBySlot(slotId: number, hanaPart: string): Promise<BoxLayoutPuidDto[]> {
+    const rows = await this.dataSource.query<
+      Array<{ PUID: string; ExpirationDate: Date | string | null }>
+    >(
+      `SELECT DISTINCT ir.PUID, ir.ExpirationDate
        FROM inventory_receive ir
        JOIN products p ON p.name = ir.HanaPart AND p.slot_id = ?
        WHERE ir.HanaPart = ?
@@ -159,7 +163,7 @@ export class BoxLayoutService {
       [slotId, hanaPart],
     );
 
-    return this.collectPuids(rows);
+    return this.collectPuidRows(rows);
   }
 
   private async queryPuidsByLocation(
@@ -167,9 +171,11 @@ export class BoxLayoutService {
     rackName: string,
     levelNo: number,
     boxCode: string,
-  ): Promise<string[]> {
-    const rows = await this.dataSource.query<Array<{ PUID: string }>>(
-      `SELECT DISTINCT ir.PUID
+  ): Promise<BoxLayoutPuidDto[]> {
+    const rows = await this.dataSource.query<
+      Array<{ PUID: string; ExpirationDate: Date | string | null }>
+    >(
+      `SELECT DISTINCT ir.PUID, ir.ExpirationDate
        FROM inventory_receive ir
        WHERE ir.HanaPart = ?
          AND ir.QtyRemain > 0
@@ -181,15 +187,50 @@ export class BoxLayoutService {
       [hanaPart, rackName, levelNo, boxCode],
     );
 
-    return this.collectPuids(rows);
+    return this.collectPuidRows(rows);
   }
 
-  private collectPuids(rows: Array<{ PUID: string }>): string[] {
-    const puids: string[] = [];
+  private collectPuidRows(
+    rows: Array<{ PUID: string; ExpirationDate: Date | string | null }>,
+  ): BoxLayoutPuidDto[] {
+    const seen = new Set<string>();
+    const puids: BoxLayoutPuidDto[] = [];
+
     for (const row of rows) {
       const puid = String(row.PUID ?? '').trim();
-      if (puid) puids.push(puid);
+      if (!puid || seen.has(puid)) continue;
+      seen.add(puid);
+      const expiry = this.classifyExpiration(row.ExpirationDate);
+      puids.push({
+        puid,
+        expirationDate: expiry.expirationDate,
+        isExpired: expiry.isExpired,
+        isNearExpiry: expiry.isNearExpiry,
+      });
     }
-    return [...new Set(puids)];
+
+    return puids;
+  }
+
+  private classifyExpiration(expirationDate: Date | string | null | undefined): {
+    expirationDate: string | null;
+    isExpired: boolean;
+    isNearExpiry: boolean;
+  } {
+    const exp = toDateOnlyString(expirationDate ?? null);
+    if (!exp) {
+      return { expirationDate: null, isExpired: false, isNearExpiry: false };
+    }
+
+    const today = toDateOnlyString(new Date()) ?? '';
+    const near = new Date();
+    near.setDate(near.getDate() + 7);
+    const nearStr = toDateOnlyString(near) ?? '';
+
+    return {
+      expirationDate: exp,
+      isExpired: exp < today,
+      isNearExpiry: exp >= today && exp <= nearStr,
+    };
   }
 }

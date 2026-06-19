@@ -16,6 +16,7 @@ import { getTvHighlight, type TvHighlight } from '../../services/tvService';
 import { SocketEvents } from '../../services/socketService';
 import { useAuthStore } from '../../store/authStore';
 import type { BoxLayout, HierarchyBox, HierarchyRack, WarehouseHierarchy } from '../../types/warehouse';
+import { normalizeBoxLayoutPuids } from '../../utils/boxLayoutPuid';
 import { speakKiosk } from '../../utils/kioskTts';
 import { useKioskAudio } from '../../hooks/useKioskAudio';
 import '../../styles/tv-display.css';
@@ -219,9 +220,12 @@ function DetailPanel({
                       {cell.product.name}
                     </div>
                   )}
-                  {cell?.puids?.map((puid) => (
-                    <div key={puid} className="tv-puid-chip">
-                      {puid}
+                  {cell?.puids && normalizeBoxLayoutPuids(cell.puids).map((item) => (
+                    <div
+                      key={item.puid}
+                      className={`tv-puid-chip${item.isExpired ? ' tv-puid-chip--expired' : item.isNearExpiry ? ' tv-puid-chip--near' : ''}`}
+                    >
+                      {item.puid}
                     </div>
                   ))}
                 </div>

@@ -126,7 +126,7 @@ function layoutToSlotsArray(layout: BoxLayout, highlightSlotId?: number): SlotMe
       highlight: cell.highlighted || (highlightSlotId != null && cell.slotId === highlightSlotId),
       name: cell.product?.name ?? null,
       qty: cell.product?.qty ?? 0,
-      puids: cell.puids ?? [],
+      puids: cell.puids?.map((item) => item.puid) ?? [],
     };
   }
 

@@ -195,6 +195,19 @@
     line-height: 1.4;
 }
 
+.rack-puid-tag--expired {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+    box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.12);
+}
+
+.rack-puid-tag--near {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .fx-rack-stagger,
     .fx-rack-skeleton {

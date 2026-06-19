@@ -8,11 +8,27 @@ import { useTranslation } from 'react-i18next';
 import { getErrorMessage } from '../../services/apiClient';
 import * as inventoryService from '../../services/inventoryService';
 import * as woBomService from '../../services/woBomService';
+import { formatFactoryDate } from '../../utils/dateTime';
 import '../../styles/wo-material-calc.css';
 
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return '0';
   return Math.abs(n - Math.round(n)) < 0.0001 ? String(Math.round(n)) : n.toFixed(2);
+}
+
+function woExpiryBoxClass(status: woBomService.WoBomPlanLine['expiryStatus']): string {
+  if (status === 'expired') return 'wo-exp-box--expired';
+  if (status === 'near') return 'wo-exp-box--near';
+  if (status === 'ok') return 'wo-exp-box--ok';
+  return 'wo-exp-box--unknown';
+}
+
+function woExpiryHintKey(
+  status: woBomService.WoBomPlanLine['expiryStatus'],
+): 'pages:expired' | 'pages:nearExpiry' | null {
+  if (status === 'expired') return 'pages:expired';
+  if (status === 'near') return 'pages:nearExpiry';
+  return null;
 }
 
 export function WoMaterialCalcPage() {
@@ -167,11 +183,25 @@ export function WoMaterialCalcPage() {
             {findMessage && <div className="fx-alert fx-alert-info">{findMessage}</div>}
 
             <div className="wo-bom-table-wrap">
-              <table className="fx-table">
+              <table className="fx-table wo-bom-table">
+                <colgroup>
+                  <col className="wo-col-item" />
+                  <col className="wo-col-op" />
+                  <col className="wo-col-part" />
+                  <col className="wo-col-desc" />
+                  <col className="wo-col-num" />
+                  <col className="wo-col-num" />
+                  <col className="wo-col-num" />
+                  <col className="wo-col-num" />
+                  <col className="wo-col-exp" />
+                  <col className="wo-col-num" />
+                  <col className="wo-col-status" />
+                  <col className="wo-col-rolls" />
+                  <col className="wo-col-action" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th className="fx-center">Item</th>
+                    <th className="fx-center wo-col-item-head">Item</th>
                     <th className="fx-center">Op</th>
                     <th>{t('common:partNumber')}</th>
                     <th>{t('common:description')}</th>
@@ -179,7 +209,9 @@ export function WoMaterialCalcPage() {
                     <th className="fx-num">{t('pages:woTotalNeed')}</th>
                     <th className="fx-num">{t('pages:woInSystem')}</th>
                     <th className="fx-num">{t('pages:woUsableStock')}</th>
-                    <th className="fx-center">{t('common:expiryDate')}</th>
+                    <th className="fx-center wo-col-exp-head">
+                      <span className="wo-col-exp-head__label">{t('common:expiryDate')}</span>
+                    </th>
                     <th className="fx-num">{t('pages:woBalance')}</th>
                     <th className="fx-center">{t('common:status')}</th>
                     <th className="fx-center">{t('pages:woRolls')}</th>
@@ -191,18 +223,21 @@ export function WoMaterialCalcPage() {
                     const totalNeed = line.requiredPerUnit * prodQty;
                     const balance = line.usableStockQty - totalNeed;
                     const short = balance < 0;
-                    const rowClass = short
-                      ? 'wo-bom-row--short'
-                      : line.expiryStatus === 'expired'
-                        ? 'wo-bom-row--expired'
-                        : line.expiryStatus === 'near'
-                          ? 'wo-bom-row--near-expiry'
-                          : '';
+                    const rowClass = [
+                      short ? 'wo-bom-row--short' : '',
+                      line.expiryStatus === 'expired' ? 'wo-bom-row--expired' : '',
+                      line.expiryStatus === 'near' ? 'wo-bom-row--near-expiry' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
+                    const expDateStr = line.earliestExpiration
+                      ? formatFactoryDate(line.earliestExpiration)
+                      : null;
+                    const expHintKey = woExpiryHintKey(line.expiryStatus);
 
                     return (
                       <tr key={`${line.materialCode}-${idx}`} className={rowClass}>
-                        <td>{idx + 1}</td>
-                        <td className="fx-center">{String(line.itemList ?? '—')}</td>
+                        <td className="fx-center wo-col-item-cell">{String(line.itemList ?? '—')}</td>
                         <td className="fx-center">{String(line.opCode ?? '—')}</td>
                         <td>
                           <span className="wo-bom-material">{line.materialCode}</span>
@@ -212,21 +247,23 @@ export function WoMaterialCalcPage() {
                         <td className="fx-num">{fmtNum(totalNeed)}</td>
                         <td className="fx-num">{fmtNum(line.systemStockQty)}</td>
                         <td className="fx-num">{fmtNum(line.usableStockQty)}</td>
-                        <td className="fx-center">
-                          {line.earliestExpiration ? (
-                            <span
-                              className={
-                                line.expiryStatus === 'expired'
-                                  ? 'wo-badge wo-badge--expired'
-                                  : line.expiryStatus === 'near'
-                                    ? 'wo-badge wo-badge--near'
-                                    : 'wo-badge wo-badge--exp-ok'
+                        <td className="wo-col-exp-cell">
+                          {expDateStr ? (
+                            <div
+                              className={`wo-exp-box ${woExpiryBoxClass(line.expiryStatus)}`}
+                              title={
+                                expHintKey
+                                  ? `${expDateStr} — ${t(expHintKey)}`
+                                  : expDateStr
                               }
                             >
-                              {line.earliestExpiration}
-                            </span>
+                              <span className="wo-exp-box__date">{expDateStr}</span>
+                              {expHintKey ? (
+                                <span className="wo-exp-box__hint">{t(expHintKey)}</span>
+                              ) : null}
+                            </div>
                           ) : (
-                            '—'
+                            <span className="wo-exp-empty">—</span>
                           )}
                         </td>
                         <td className={`fx-num ${short ? 'wo-num-bad' : 'wo-num-ok'}`}>

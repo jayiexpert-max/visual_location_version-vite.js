@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { InventoryReceive } from '../../../entities/inventory-receive.entity';
+import { toDateOnlyString } from '../../../common/utils/date-only.util';
 import { CpkService } from '../../cpk/cpk.service';
 import { PdserviceService } from '../../pdservice/pdservice.service';
 import type { PdservicePuidData } from '../../pdservice/pdservice.client';
@@ -137,18 +138,14 @@ export class ExpirationSyncService {
 
     try {
       const apiData = await this.pdserviceService.fetchByPuid(normalizedPuid);
-      const oldDate = entity.expirationDate
-        ? String(entity.expirationDate).slice(0, 10)
-        : null;
+      const oldDate = toDateOnlyString(entity.expirationDate);
 
       await this.applyPdserviceData(entity, apiData);
 
       const refreshed = await this.inventoryRepository.findOne({
         where: { id: entity.id },
       });
-      const newDate = refreshed?.expirationDate
-        ? String(refreshed.expirationDate).slice(0, 10)
-        : oldDate;
+      const newDate = toDateOnlyString(refreshed?.expirationDate) ?? oldDate;
 
       let message = 'Updated all data successfully';
       if (oldDate && newDate && oldDate !== newDate) {

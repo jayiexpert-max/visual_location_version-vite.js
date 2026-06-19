@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toDateOnlyString } from '../../../common/utils/date-only.util';
 import { InventoryReceive } from '../../../entities/inventory-receive.entity';
 import { AppSettingsService } from '../../warehouse/services/app-settings.service';
 import { InventoryReceiveRepository } from '../repositories/inventory-receive.repository';
@@ -61,7 +62,7 @@ export class FifoService {
 
     return rows.map((row) => ({
       puid: row.puid ?? '',
-      expiration_date: row.expirationDate ? String(row.expirationDate).slice(0, 10) : '',
+      expiration_date: toDateOnlyString(row.expirationDate) ?? '',
       expiration_display: this.formatExpirationDisplay(row.expirationDate),
       loc_box: row.locBox ?? '',
     }));
@@ -224,9 +225,7 @@ export class FifoService {
         .getOne();
     }
 
-    const scanExp = item.expirationDate
-      ? String(item.expirationDate).slice(0, 10)
-      : null;
+    const scanExp = toDateOnlyString(item.expirationDate);
     if (!scanExp) return null;
 
     return baseQb()
@@ -259,10 +258,7 @@ export class FifoService {
   }
 
   private normalizeExpiration(date: Date | string | null | undefined): string | null {
-    if (!date) return null;
-    const s = String(date).slice(0, 10);
-    if (!s || s === '0000-00-00') return null;
-    return s;
+    return toDateOnlyString(date);
   }
 
   private formatExpirationDisplay(date: Date | string | null | undefined): string {

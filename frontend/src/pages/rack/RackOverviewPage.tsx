@@ -77,7 +77,7 @@ function buildBoxLayoutPreview(
         row: visRow + 1,
         col: col + 1,
         highlighted: false,
-        puids: slot.puids ?? [],
+        puids: (slot.puids ?? []).map((puid) => ({ puid })),
         product: slot.product
           ? {
               id: slot.product.id,

@@ -23,6 +23,8 @@ import { useAuthStore } from '../../store/authStore';
 import { getErrorMessage } from '../../services/apiClient';
 import type { BoxLayout, BoxLayoutCell } from '../../types/warehouse';
 import { arrangeSlotsByLayout, rackSlotGridCols } from '../../utils/rackSlotLayout';
+import { boxLayoutPuidClass, normalizeBoxLayoutPuids } from '../../utils/boxLayoutPuid';
+import { formatFactoryDate } from '../../utils/dateTime';
 
 interface HighlightUpdatePayload {
   boxId: number;
@@ -123,10 +125,17 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
     }
   };
 
+  const expiredPuidCount =
+    layout?.cells.reduce(
+      (sum, cell) =>
+        sum + normalizeBoxLayoutPuids(cell.puids).filter((p) => p.isExpired).length,
+      0,
+    ) ?? 0;
   const occupiedCount = layout?.cells.filter((c) => c.product).length ?? 0;
   const totalSlots = layout?.cells.length ?? 0;
   const totalQty = layout?.cells.reduce(
-    (sum, cell) => sum + Math.max(cell.product?.qty ?? 0, cell.puids?.length ?? 0),
+    (sum, cell) =>
+      sum + Math.max(cell.product?.qty ?? 0, normalizeBoxLayoutPuids(cell.puids).length),
     0,
   ) ?? 0;
 
@@ -181,6 +190,14 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
                 color={totalQty > 0 ? 'success' : 'error'}
                 variant="outlined"
               />
+              {expiredPuidCount > 0 && (
+                <Chip
+                  label={`${t('pages:expired')}: ${expiredPuidCount}`}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                />
+              )}
               <Chip
                 icon={<LightbulbIcon />}
                 label={t('common:triggerLight')}
@@ -209,7 +226,7 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
                 const filled = Boolean(cell.product);
                 const highlighted = cell.highlighted;
                 const busy = ioLoading === cell.slotId;
-                const puids = cell.puids ?? [];
+                const puids = normalizeBoxLayoutPuids(cell.puids);
                 const qty = Math.max(cell.product?.qty ?? 0, puids.length);
 
                 return (
@@ -230,7 +247,11 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
                         minHeight: 72,
                         border: 2,
                         borderRadius: 2,
-                        borderColor: highlighted ? 'warning.main' : filled ? 'success.main' : 'divider',
+                        borderColor: highlighted
+                          ? 'warning.main'
+                          : filled
+                            ? 'success.main'
+                            : 'divider',
                         bgcolor: highlighted
                           ? 'warning.light'
                           : qty > 0
@@ -261,9 +282,27 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
                       </Stack>
                       {puids.length > 0 && (
                         <Box className="rack-puid-tags">
-                          {puids.map((puid) => (
-                            <span key={puid} className="rack-puid-tag">{puid}</span>
-                          ))}
+                          {puids.map((item) => {
+                            const expLabel = item.expirationDate
+                              ? formatFactoryDate(item.expirationDate)
+                              : null;
+                            const title = item.isExpired
+                              ? `${item.puid}${expLabel ? ` · ${expLabel} · ${t('pages:expired')}` : ` · ${t('pages:expired')}`}`
+                              : item.isNearExpiry
+                                ? `${item.puid}${expLabel ? ` · ${expLabel} · ${t('pages:nearExpiry')}` : ''}`
+                                : expLabel
+                                  ? `${item.puid} · ${expLabel}`
+                                  : item.puid;
+                            return (
+                              <span
+                                key={item.puid}
+                                className={`rack-puid-tag ${boxLayoutPuidClass(item)}`.trim()}
+                                title={title}
+                              >
+                                {item.puid}
+                              </span>
+                            );
+                          })}
                         </Box>
                       )}
                     </Box>

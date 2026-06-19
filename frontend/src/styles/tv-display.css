@@ -377,6 +377,16 @@
   color: #94a3b8;
 }
 
+.tv-puid-chip--expired {
+  color: #fecaca;
+  font-weight: 700;
+}
+
+.tv-puid-chip--near {
+  color: #fde68a;
+  font-weight: 700;
+}
+
 .tv-slot-cell.highlighted .tv-puid-chip {
   color: #fde68a;
 }

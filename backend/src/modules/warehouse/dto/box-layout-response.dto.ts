@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class BoxLayoutPuidDto {
+  @ApiProperty({ example: '08AM1L' })
+  puid: string;
+
+  @ApiPropertyOptional({ example: '2027-05-29' })
+  expirationDate?: string | null;
+
+  @ApiPropertyOptional({ example: false })
+  isExpired?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  isNearExpiry?: boolean;
+}
+
 export class BoxLayoutProductDto {
   @ApiProperty({ example: 1 })
   id: number;
@@ -34,11 +48,10 @@ export class BoxLayoutCellDto {
   product?: BoxLayoutProductDto | null;
 
   @ApiPropertyOptional({
-    type: [String],
-    example: ['ABC123', 'DEF456'],
+    type: [BoxLayoutPuidDto],
     description: 'Active PUIDs in slot (inventory_receive)',
   })
-  puids?: string[];
+  puids?: BoxLayoutPuidDto[];
 }
 
 export class BoxLayoutResponseDto {

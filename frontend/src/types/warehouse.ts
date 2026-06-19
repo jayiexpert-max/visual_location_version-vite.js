@@ -1,3 +1,10 @@
+export interface BoxLayoutPuid {
+  puid: string;
+  expirationDate?: string | null;
+  isExpired?: boolean;
+  isNearExpiry?: boolean;
+}
+
 export interface HierarchyProduct {
   id: number;
   name: string;
@@ -42,7 +49,7 @@ export interface BoxLayoutCell {
   row: number;
   col: number;
   highlighted: boolean;
-  puids?: string[];
+  puids?: BoxLayoutPuid[];
   product?: {
     id: number;
     name: string;

@@ -102,19 +102,169 @@
     box-shadow: var(--fx-shadow);
 }
 
-.wo-bom-table-wrap .fx-table {
-    min-width: 960px;
+.wo-bom-table-wrap .fx-table.wo-bom-table {
+    width: 100%;
+    min-width: 1060px;
     margin: 0;
+    table-layout: fixed;
+}
+
+.wo-bom-table-wrap .fx-table th,
+.wo-bom-table-wrap .fx-table td {
+    padding: 0.55rem 0.5rem;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wo-bom-table .wo-col-item-head,
+.wo-bom-table .wo-col-item-cell {
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .wo-bom-table-wrap .fx-table th.fx-num,
 .wo-bom-table-wrap .fx-table td.fx-num {
     text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .wo-bom-table-wrap .fx-table th.fx-center,
 .wo-bom-table-wrap .fx-table td.fx-center {
     text-align: center;
+}
+
+.wo-bom-table .wo-col-item { width: 4.5rem; min-width: 4.5rem; }
+.wo-bom-table .wo-col-item-head,
+.wo-bom-table .wo-col-item-cell {
+    white-space: nowrap;
+}
+.wo-bom-table .wo-col-op { width: 2.75rem; }
+.wo-bom-table .wo-col-part { width: 9.5rem; }
+.wo-bom-table .wo-col-desc { width: auto; min-width: 10rem; }
+.wo-bom-table .wo-col-num { width: 4.75rem; }
+.wo-bom-table .wo-col-exp { width: 7.75rem; min-width: 7.75rem; }
+.wo-bom-table .wo-col-status { width: 5.5rem; }
+.wo-bom-table .wo-col-rolls { width: 3rem; }
+.wo-bom-table .wo-col-action { width: 6.5rem; }
+
+.wo-bom-table td:nth-child(5) {
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.35;
+}
+
+.wo-col-exp-head {
+    white-space: nowrap;
+    background: #f1f5f9;
+    border-bottom: 2px solid #cbd5e1;
+}
+
+.wo-col-exp-head__label {
+    display: inline-block;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #334155;
+    letter-spacing: 0.02em;
+}
+
+.wo-col-exp-cell {
+    white-space: nowrap;
+    padding: 0.45rem 0.35rem !important;
+    background: #f8fafc;
+    border-left: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+}
+
+/* กล่องวันหมดอายุ — ชัดทุกสถานะ ไม่ขึ้นกับแถวสต็อกไม่พอ */
+.wo-exp-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12rem;
+    min-width: 6.75rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    line-height: 1.25;
+}
+
+.wo-exp-box__date {
+    font-weight: 800;
+    font-size: 0.92rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
+.wo-exp-box__hint {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: none;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.wo-exp-box--expired {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.08);
+}
+
+.wo-exp-box--expired .wo-exp-box__date {
+    color: #991b1b;
+}
+
+.wo-exp-box--expired .wo-exp-box__hint {
+    color: #b91c1c;
+}
+
+.wo-exp-box--near {
+    background: #fef3c7;
+    border-color: #fcd34d;
+    box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.08);
+}
+
+.wo-exp-box--near .wo-exp-box__date {
+    color: #92400e;
+}
+
+.wo-exp-box--near .wo-exp-box__hint {
+    color: #b45309;
+}
+
+.wo-exp-box--ok {
+    background: #ecfdf5;
+    border-color: #86efac;
+}
+
+.wo-exp-box--ok .wo-exp-box__date {
+    color: #166534;
+}
+
+.wo-exp-box--unknown {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.wo-exp-box--unknown .wo-exp-box__date {
+    color: #334155;
+}
+
+.wo-exp-empty {
+    display: block;
+    text-align: center;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.wo-bom-row--expired .wo-col-exp-cell {
+    background: #fef2f2;
+}
+
+.wo-bom-row--near-expiry .wo-col-exp-cell {
+    background: #fffbeb;
 }
 
 .wo-bom-material {
@@ -198,17 +348,18 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.35rem;
-    min-height: 36px;
-    padding: 0.35rem 0.875rem;
+    gap: 0.25rem;
+    min-height: 32px;
+    padding: 0.3rem 0.55rem;
     background: #eff6ff;
     color: var(--fx-accent);
     border: 1px solid #dbeafe;
     border-radius: var(--fx-radius);
     cursor: pointer;
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-family: inherit;
+    white-space: nowrap;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
