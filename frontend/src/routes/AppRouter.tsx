@@ -25,9 +25,6 @@ const ReceiveReturnPage = lazy(() =>
 const PicklistPage = lazy(() =>
   import('../pages/picklist/PicklistPage').then((m) => ({ default: m.PicklistPage })),
 );
-const RackOverviewPage = lazy(() =>
-  import('../pages/rack/RackOverviewPage').then((m) => ({ default: m.RackOverviewPage })),
-);
 const ExpiryCheckPage = lazy(() =>
   import('../pages/expiry/ExpiryCheckPage').then((m) => ({ default: m.ExpiryCheckPage })),
 );
@@ -139,7 +136,7 @@ export function AppRouter() {
               <Route path="wo-material-calc" element={<WoMaterialCalcPage />} />
             </Route>
             <Route element={<ProtectedRoute menu="rackOverview" />}>
-              <Route path="rack" element={<RackOverviewPage />} />
+              <Route path="rack" element={<Navigate to="/app/search" replace />} />
             </Route>
             <Route element={<ProtectedRoute menu="abdulAi" />}>
               <Route path="abdul-chat" element={<AbdulChatPage />} />

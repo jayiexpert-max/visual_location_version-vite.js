@@ -7,13 +7,13 @@ import AssignmentReturnIcon from '@mui/icons-material/AssignmentReturn';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CalculateIcon from '@mui/icons-material/Calculate';
-import WarehouseIcon from '@mui/icons-material/Warehouse';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import TvIcon from '@mui/icons-material/Tv';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import PeopleIcon from '@mui/icons-material/People';
+import WarehouseIcon from '@mui/icons-material/Warehouse';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import type { SvgIconComponent } from '@mui/icons-material';
@@ -33,7 +33,6 @@ export const MENU_ITEMS: MenuItemConfig[] = [
   { key: 'picklist', path: '/app/picklist', icon: PlaylistAddCheckIcon },
   { key: 'bookingOut', path: '/app/booking-out', icon: LocalShippingIcon },
   { key: 'woMaterialCalc', path: '/app/wo-material-calc', icon: CalculateIcon },
-  { key: 'rackOverview', path: '/app/rack', icon: WarehouseIcon },
   { key: 'abdulAi', path: '/app/abdul-chat', icon: SmartToyIcon },
   { key: 'expiryCheck', path: '/app/expiry', icon: EventBusyIcon },
   { key: 'layout3d', path: buildKioskUrl('/layout-3d'), icon: ViewInArIcon, external: true },

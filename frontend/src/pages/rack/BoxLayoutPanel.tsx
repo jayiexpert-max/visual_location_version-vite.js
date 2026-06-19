@@ -37,10 +37,20 @@ interface BoxLayoutPanelProps {
   boxId: number | null;
   boxCode?: string;
   initialLayout?: BoxLayout | null;
+  highlightBoxId?: number;
+  highlightSlotId?: number;
   onClose: () => void;
 }
 
-export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }: BoxLayoutPanelProps) {
+export function BoxLayoutPanel({
+  open,
+  boxId,
+  boxCode,
+  initialLayout,
+  highlightBoxId,
+  highlightSlotId,
+  onClose,
+}: BoxLayoutPanelProps) {
   const { t } = useTranslation(['pages', 'common']);
   const accessToken = useAuthStore((s) => s.accessToken);
   const socketAuth = useMemo(
@@ -71,12 +81,15 @@ export function BoxLayoutPanel({ open, boxId, boxCode, initialLayout, onClose }:
       if (initialLayout) {
         setLayout(initialLayout);
       }
-      void loadLayout(boxId);
+      void loadLayout(
+        boxId,
+        highlightBoxId && highlightSlotId && highlightBoxId === boxId ? highlightSlotId : undefined,
+      );
     } else {
       setLayout(null);
       setError(null);
     }
-  }, [open, boxId, initialLayout, loadLayout]);
+  }, [open, boxId, initialLayout, loadLayout, highlightBoxId, highlightSlotId]);
 
   const handleHighlightUpdate = useCallback(
     (payload: HighlightUpdatePayload) => {

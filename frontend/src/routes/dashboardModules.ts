@@ -8,7 +8,6 @@ import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import ListAltIcon from '@mui/icons-material/ListAlt';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CalculateIcon from '@mui/icons-material/Calculate';
-import GridViewIcon from '@mui/icons-material/GridView';
 import TvIcon from '@mui/icons-material/Tv';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -95,14 +94,6 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     hoverColor: '#0284c7',
     iconBg: '#e0f2fe',
     iconColor: '#0284c7',
-  },
-  {
-    key: 'rackOverview',
-    path: '/app/rack',
-    icon: GridViewIcon,
-    hoverColor: '#3b82f6',
-    iconBg: '#dbeafe',
-    iconColor: '#2563eb',
   },
   {
     key: 'tvDisplay',

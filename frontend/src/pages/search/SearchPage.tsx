@@ -1,17 +1,16 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PageHeader } from '../../components/layout/PageHeader';
 import * as inventoryService from '../../services/inventoryService';
 import * as ioService from '../../services/ioService';
 import * as tvService from '../../services/tvService';
-import * as warehouseService from '../../services/warehouseService';
 import { getErrorMessage } from '../../services/apiClient';
 import { normalizePuidInput } from '../../utils/reservationUtils';
-import { arrangeSlotsByLayout, rackSlotGridCols } from '../../utils/rackSlotLayout';
-import type { BoxLayout, WarehouseHierarchy } from '../../types/warehouse';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SocketEvents } from '../../services/socketService';
 import { useAuthStore } from '../../store/authStore';
+import { RackOverviewSection } from '../rack/RackOverviewSection';
 
 export function SearchPage() {
   const { t } = useTranslation(['pages', 'common']);
@@ -22,17 +21,6 @@ export function SearchPage() {
   const [message, setMessage] = useState<{ kind: 'success' | 'warning'; html: string } | null>(
     null,
   );
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalHighlightSlotId, setModalHighlightSlotId] = useState(0);
-  const [modalLayout, setModalLayout] = useState<BoxLayout | null>(null);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-
-  const hierarchyQuery = useQuery({
-    queryKey: ['warehouse-hierarchy', 'search'],
-    queryFn: () => warehouseService.getHierarchy(),
-  });
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -66,9 +54,6 @@ export function SearchPage() {
       setResult(data);
       setMessage({ kind: 'success', html: buildSuccessMessage(data) });
 
-      // Push highlight directly to TV with the already-resolved location data.
-      // Avoid re-resolving via /inventory/highlight which may fail silently
-      // if the product is not in v_inventory_location.
       try {
         await tvService.setTvHighlight({
           productName: data.hanaPart,
@@ -121,7 +106,6 @@ export function SearchPage() {
     setQuery('');
     setResult(null);
     setMessage(null);
-    setModalOpen(false);
     inputRef.current?.focus();
   }, []);
 
@@ -156,46 +140,13 @@ export function SearchPage() {
     }
   };
 
-  const openBoxModal = async (boxId: number, highlightSlotId: number) => {
-    setModalHighlightSlotId(highlightSlotId);
-    setModalOpen(true);
-    setModalLoading(true);
-    setModalError(null);
-    setModalLayout(null);
-
-    try {
-      const layout = await warehouseService.getBoxLayout(
-        boxId,
-        highlightSlotId > 0 ? highlightSlotId : undefined,
-      );
-      setModalLayout(layout);
-    } catch (err) {
-      setModalError(getErrorMessage(err, t('common:error'), t));
-    } finally {
-      setModalLoading(false);
-    }
-  };
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setModalLayout(null);
-    setModalError(null);
-  };
-
-  const hierarchy = hierarchyQuery.data;
   const highlightBoxId = result?.boxId ?? 0;
   const highlightSlotId = result?.slotId ?? 0;
 
-  const modalCells = useMemo(() => {
-    if (!modalLayout) return [];
-    const sorted = [...modalLayout.cells].sort((a, b) => a.slotNo - b.slotNo);
-    return arrangeSlotsByLayout(sorted, modalLayout.layout);
-  }, [modalLayout]);
-
-  const modalGridCols = modalLayout ? rackSlotGridCols(modalLayout.layout) : 1;
-
   return (
     <div className="fx-scan-page">
+      <PageHeader title={t('searchTitle')} />
+
       {message && (
         <div
           className={`message ${message.kind}`}
@@ -207,7 +158,11 @@ export function SearchPage() {
         <button type="button" className="fx-btn fx-btn-secondary" onClick={handleClear}>
           <i className="fas fa-eraser" /> {t('pages:searchClear')}
         </button>
-        <button type="button" className="fx-btn fx-btn-danger" onClick={() => void handleResetLights()}>
+        <button
+          type="button"
+          className="fx-btn fx-btn-danger"
+          onClick={() => void handleResetLights()}
+        >
           <i className="fas fa-lightbulb" /> {t('pages:searchResetLights')}
         </button>
       </div>
@@ -238,7 +193,12 @@ export function SearchPage() {
                 </div>
               )}
             </div>
-            <button type="submit" className="fx-btn fx-btn-accent" id="btnSearch" disabled={searchMutation.isPending}>
+            <button
+              type="submit"
+              className="fx-btn fx-btn-accent"
+              id="btnSearch"
+              disabled={searchMutation.isPending}
+            >
               <i className="fas fa-search" /> {t('common:search')}
             </button>
           </div>
@@ -247,136 +207,12 @@ export function SearchPage() {
 
       <section className="fx-rack-section">
         <h3 className="fx-section-title">{t('pages:searchRackOverview')}</h3>
-
-        {hierarchyQuery.isLoading && (
-          <p className="message warning">{t('common:loading')}</p>
-        )}
-
-        {hierarchy && (
-          <div className="fx-rack-layout">
-            {hierarchy.racks.map((rack, rackIndex) => (
-              <RackCard
-                key={rack.id}
-                rack={rack}
-                delay={rackIndex * 0.1}
-                highlightBoxId={highlightBoxId}
-                highlightSlotId={highlightSlotId}
-                onBoxClick={(boxId, slotId) => void openBoxModal(boxId, slotId)}
-              />
-            ))}
-          </div>
-        )}
+        <RackOverviewSection
+          highlightBoxId={highlightBoxId}
+          highlightSlotId={highlightSlotId}
+          showTitle={false}
+        />
       </section>
-
-      <div
-        className={`fx-rack-modal${modalOpen ? ' is-open' : ''}`}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) closeModal();
-        }}
-        onKeyDown={() => undefined}
-        role="presentation"
-      >
-        <div className="fx-rack-modal__panel">
-          <h3 className="fx-rack-modal__title">{t('pages:searchBoxDetails')}</h3>
-          <div
-            className="fx-rack-modal__slots"
-            style={
-              modalLayout
-                ? {
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${modalGridCols}, 1fr)`,
-                    gap: '8px',
-                  }
-                : undefined
-            }
-          >
-            {modalLoading &&
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="fx-rack-skeleton" />
-              ))}
-            {modalError && <div className="message warning">{modalError}</div>}
-            {!modalLoading &&
-              !modalError &&
-              modalCells.map((cell, idx) => {
-                if (!cell) {
-                  return (
-                    <div
-                      key={`empty-${idx}`}
-                      style={{ visibility: 'hidden', border: 'none', background: 'transparent' }}
-                    />
-                  );
-                }
-                const highlighted =
-                  cell.highlighted ||
-                  (modalHighlightSlotId > 0 && cell.slotId === modalHighlightSlotId);
-                const filled = Boolean(cell.product?.name);
-                return (
-                  <div
-                    key={cell.slotId}
-                    className={`fx-rack-slot fade-in${highlighted ? ' is-highlighted' : ''}`}
-                    style={{ animationDelay: `${idx * 0.05}s` }}
-                  >
-                    <div style={{ fontWeight: 'bold', color: 'var(--fx-text)' }}>{cell.slotNo}</div>
-                    {filled ? (
-                      <div style={{ fontSize: '0.75rem', marginTop: 4, color: 'var(--fx-text-muted)' }}>
-                        {cell.product?.name}
-                        <br />
-                        <strong style={{ color: 'var(--fx-accent)' }}>{cell.product?.qty}</strong>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '0.75rem', marginTop: 4, color: 'var(--fx-danger)' }}>
-                        {t('pages:searchSlotEmpty')}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-          <button type="button" className="fx-btn fx-btn-secondary fx-btn-block" onClick={closeModal}>
-            <i className="fas fa-times" /> {t('common:close')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RackCard({
-  rack,
-  delay,
-  highlightBoxId,
-  highlightSlotId,
-  onBoxClick,
-}: {
-  rack: WarehouseHierarchy['racks'][number];
-  delay: number;
-  highlightBoxId: number;
-  highlightSlotId: number;
-  onBoxClick: (boxId: number, highlightSlotId: number) => void;
-}) {
-  return (
-    <div className="fx-rack fx-rack-stagger" style={{ animationDelay: `${delay}s` }}>
-      <h3>Rack: {rack.name}</h3>
-      {rack.levels.map((level) => (
-        <div key={level.id} className="fx-rack-level">
-          <h4>Level {level.levelNo}</h4>
-          <div className="fx-rack-level__boxes">
-            {level.boxes.map((box) => {
-              const isHighlighted = highlightBoxId > 0 && box.id === highlightBoxId;
-              return (
-                <button
-                  key={box.id}
-                  type="button"
-                  className={`fx-rack-box${isHighlighted ? ' is-highlighted' : ''}`}
-                  onClick={() => onBoxClick(box.id, isHighlighted ? highlightSlotId : 0)}
-                >
-                  {box.boxCode}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
