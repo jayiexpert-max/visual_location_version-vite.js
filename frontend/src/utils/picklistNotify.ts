@@ -240,19 +240,20 @@ export function playPicklistBeep(): void {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
-  [880, 1175].forEach((freq, i) => {
+  const pattern = [740, 988, 1175];
+  pattern.forEach((freq, i) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.frequency.value = freq;
     osc.type = 'sine';
-    const t0 = now + i * 0.22;
+    const t0 = now + i * 0.16;
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    gain.gain.exponentialRampToValueAtTime(0.26, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
     osc.start(t0);
-    osc.stop(t0 + 0.18);
+    osc.stop(t0 + 0.15);
   });
 }
 
@@ -261,11 +262,13 @@ export function speakNewPicklists(newIds: string[]): void {
   window.speechSynthesis.cancel();
   const msg =
     newIds.length === 1
-      ? i18n.t('pages:apiMsgPicklistNewSpeechSingle', { id: newIds[0] })
-      : i18n.t('pages:apiMsgPicklistNewSpeechMulti', { count: newIds.length });
+      ? i18n.t('pages:apiMsgPicklistNewSystemMessageSingle', { id: newIds[0] })
+      : i18n.t('pages:apiMsgPicklistNewSystemMessageMulti', { count: newIds.length });
   const utter = new SpeechSynthesisUtterance(msg);
   utter.lang = i18n.language?.startsWith('en') ? 'en-US' : 'th-TH';
-  utter.rate = i18n.language?.startsWith('en') ? 0.95 : 0.92;
+  utter.rate = i18n.language?.startsWith('en') ? 0.92 : 0.88;
+  utter.pitch = 1.05;
+  utter.volume = 1;
   window.speechSynthesis.speak(utter);
 }
 

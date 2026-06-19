@@ -210,6 +210,8 @@ export function PicklistPage() {
       if (newIds.length) {
         alertNewPicklists(newIds);
         showAlert('main', 'success', t('pages:picklistNewAlert', { ids: newIds.join(', ') }));
+      } else if (!silent && parsed.picklists.length > 0) {
+        showAlert('main', 'info', t('pages:picklistDataArrived', { count: parsed.picklists.length }));
       } else if (!silent) {
         hideAlert();
       }
