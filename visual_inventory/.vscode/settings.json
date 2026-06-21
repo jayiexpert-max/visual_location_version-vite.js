@@ -1,6 +1,0 @@
-{
-  "intelephense.environment.documentRoot": "public",
-  "intelephense.environment.includePaths": [
-    "config"
-  ]
-}

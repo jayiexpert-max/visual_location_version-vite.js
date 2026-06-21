@@ -7,6 +7,7 @@ const SCROLL_THRESHOLD = 280;
 export function AppFactoryFooter() {
   const { t } = useTranslation(['pages', 'common']);
   const [visible, setVisible] = useState(false);
+  const versionLabel = `v${__APP_VERSION__}`;
 
   useEffect(() => {
     const onScroll = () => setVisible(window.scrollY > SCROLL_THRESHOLD);
@@ -23,7 +24,7 @@ export function AppFactoryFooter() {
   return (
     <>
       <footer className="fx-footer">
-        {t('pages:appCopyright')} &copy; {new Date().getFullYear()}
+        {t('pages:appCopyright')} &copy; {new Date().getFullYear()} · {versionLabel}
       </footer>
       <button
         type="button"
