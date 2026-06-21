@@ -1,4 +1,4 @@
--- B3: FIFO issue policy settings (mirrors PHP app_settings_service.php)
+-- B3: FIFO / FEFO issue policy settings (mirrors PHP app_settings_service.php)
 -- MariaDB 10.4+ / MySQL 8.0+
 
 SET NAMES utf8mb4;

@@ -12,7 +12,7 @@ export function isValidFifoIssueMode(mode: string): boolean {
 
 export function fifoIssueModeLabel(mode: string, isEn: boolean): string {
   if (mode === FIFO_ISSUE_MODE_IM_BATCH) {
-    return isEn ? 'Batch IM (FIFO)' : 'Batch IM (FIFO)';
+    return isEn ? 'FIFO (IM Batch)' : 'FIFO (IM Batch)';
   }
-  return isEn ? 'Expiration Date (FIFO)' : 'วันหมดอายุ (FIFO)';
+  return isEn ? 'FEFO (Expired date)' : 'FEFO (วันหมดอายุ)';
 }

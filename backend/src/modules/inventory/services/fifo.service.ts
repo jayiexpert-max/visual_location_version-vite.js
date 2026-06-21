@@ -142,8 +142,8 @@ export class FifoService {
       return {
         ok: false,
         message: blockPuid
-          ? `FIFO violation — issue ${blockPuid} first (earlier expiration)`
-          : 'FIFO violation — issue earlier-expiration stock first',
+          ? `FEFO violation — issue ${blockPuid} first (earlier expiration)`
+          : 'FEFO violation — issue earlier-expiration stock first',
         recommended_puid: blockPuid || undefined,
         expired_rolls: expiredRolls,
         item,
@@ -161,7 +161,7 @@ export class FifoService {
         const strictMsg =
           tier === 'fresh' || tier === 'unknown'
             ? `Cannot issue long-life stock yet. Issue near-expiry ${recommended} first.`
-            : `FIFO violation! Issue ${recommended} first (earlier expiration)`;
+            : `FEFO violation! Issue ${recommended} first (earlier expiration)`;
         return {
           ok: false,
           message: strictMsg,

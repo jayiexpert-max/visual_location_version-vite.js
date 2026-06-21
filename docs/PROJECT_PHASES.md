@@ -115,7 +115,7 @@ Active cards from PHP `public/index.php` (commented-out cards excluded).
 | 2 | Reservation (RES) | `show_api_data.php` | `/app/receive-reservation` | ✅ | ✅ | Split-panel, PUID verify/save |
 | 3 | Material Inbound | `add_stock.php` | `/app/receive-return` | ✅ | ✅ | PDService fetch + CPK UpdatePUIDStatus + TV/IO highlight |
 | 4 | Create Picklist (HANA) | external URL | external | ✅ | N/A | Same external link as PHP |
-| 5 | Issue by Picklist | `picklist_issue.php` | `/app/picklist` | ✅ | ✅ | Factory UI, RequiredOnly, FIFO, close+KitsNote, TV/3D |
+| 5 | Issue by Picklist | `picklist_issue.php` | `/app/picklist` | ✅ | ✅ | Factory UI, RequiredOnly, FIFO / FEFO, close+KitsNote, TV/3D |
 | 6 | Booking Out PUID | `booking_out_puid.php` | `/app/booking-out` | ✅ | ✅ | Preview + confirm modal + eligibility (PHP parity) |
 | 7 | WO Material Calculation | `wo_material_calc.php` | `/app/wo-material-calc` | ✅ | ✅ | WO header, production qty, BOM table, Find/highlight |
 | 8 | Rack Overview | `dashboard_rack.php` | `/app/rack` | ✅ | ✅ | |
@@ -127,7 +127,7 @@ Active cards from PHP `public/index.php` (commented-out cards excluded).
 | 14 | Materials | `add_material.php` | `/app/materials` | ✅ | ✅ | CRUD + CSV import/export |
 | 15 | Manage Users | `manage_users.php` | `/app/users` | ✅ | ✅ | |
 | 16 | Receive List | `view_inventory_receive.php` | `/app/receive-list` | ✅ | ✅ | |
-| 17 | System Settings | `admin.php` | `/app/admin` | ✅ | ✅ | Racks/slots/IO/products/FIFO |
+| 17 | System Settings | `admin.php` | `/app/admin` | ✅ | ✅ | Racks/slots/IO/products/FIFO / FEFO |
 | — | Handheld (BT-A500) | `handheld/index.php` | `/handheld` | ✅ | ✅ | Login, menu, add stock, RES, picklist; idle 30m |
 | — | UI Preview | `ui_preview.php` | — | ❌ | ❌ | Dev-only; not planned |
 
@@ -152,15 +152,15 @@ Active cards from PHP `public/index.php` (commented-out cards excluded).
 - [x] Factory UI parity (`picklist_issue.php` — list, issue panel, scan, TV/3D)
 - [x] RequiredOnly filter + Meta (CPK fallback + local filter)
 - [x] Pre-check PUID flow (`/inventory/lookup`)
-- [x] FIFO validation on issue + renewal modal
+- [x] FIFO / FEFO validation on issue + renewal modal
 - [x] Local stock withdraw + `stock_logs` picklist_issue entry
 - [x] Close picklist modal with KitsNote (max 200)
 
-### B3 — Admin products + FIFO ✅
+### B3 — Admin products + FIFO / FEFO ✅
 
 - [x] Products slot mapping UI (`admin.php#products`)
-- [x] FIFO issue policy settings UI
-- [x] FIFO settings API (`app_settings` equivalent)
+- [x] FIFO / FEFO issue policy settings UI
+- [x] FIFO / FEFO settings API (`app_settings` equivalent)
 - [x] Warehouse admin CRUD (racks, levels, boxes, slots, devices)
 
 ### B4 — Materials CSV ✅

@@ -11,17 +11,20 @@ export interface AbdulChatResult {
   question: string;
 }
 
+const ABDUL_NEAR_EXPIRY_DAYS = 7;
+
 const INTENT_MAP: Record<string, string[]> = {
   near_expiry: [
     'ใกล้หมดอายุ',
     'ใกล้หมด',
+    'วันใกล้หมดอายุ',
     'expire soon',
     'near expiry',
     'expiring soon',
     'จะหมดอายุ',
     'เกือบหมดอายุ',
   ],
-  expired_material: ['หมดอายุ', 'expired', 'หมดแล้ว', 'เลยกำหนด'],
+  expired_material: ['วันหมดอายุ', 'หมดอายุ', 'expired', 'หมดแล้ว', 'เลยกำหนด'],
   find_location: [
     'อยู่ไหน',
     'อยู่ที่ไหน',
@@ -93,6 +96,14 @@ export class AbdulChatService {
 
   private detectIntent(question: string): string {
     const q = question.toLowerCase();
+
+    if (q.includes('หมดอายุ') && !q.includes('ใกล้หมดอายุ') && !q.includes('ใกล้หมด')) {
+      return 'expired_material';
+    }
+    if (q.includes('ใกล้หมดอายุ') || q.includes('ใกล้หมด') || q.includes('วันใกล้หมดอายุ')) {
+      return 'near_expiry';
+    }
+
     for (const [intent, keywords] of Object.entries(INTENT_MAP)) {
       for (const kw of keywords) {
         if (q.includes(kw.toLowerCase())) {
@@ -235,44 +246,76 @@ export class AbdulChatService {
 
       case 'expired_material':
         sql = `SELECT 
-                        HanaPart, Description, 
-                        ExpirationDate,
-                        DATEDIFF(CURDATE(), ExpirationDate) AS DaysOverdue,
-                        QtyRemain, PUID,
-                        Loc_Shelf AS Shelf, Loc_Level AS Level, Loc_Box AS Box,
-                        StatusName
+                        PUID,
+                        HanaPart,
+                        Description,
+                        QtyRemain,
+                        Qty AS QtyOriginal,
+                        Loc_Shelf AS Shelf,
+                        Loc_Level AS Level,
+                        Loc_Box AS Box,
+                        DATE(ExpirationDate) AS ExpirationDate,
+                        'Expired' AS ExpiryStatus,
+                        NULL AS DaysRemaining,
+                        DATEDIFF(CURDATE(), DATE(ExpirationDate)) AS DaysOverdue,
+                        StatusName,
+                        LotNo,
+                        DateCode
                     FROM inventory_receive
-                    WHERE ExpirationDate <= CURDATE()
+                    WHERE DATE(ExpirationDate) < CURDATE()
                       AND ExpirationDate IS NOT NULL
                       AND QtyRemain > 0
-                    ORDER BY ExpirationDate ASC`;
+                    ORDER BY DATE(ExpirationDate) ASC, PUID ASC`;
         data = await this.dataSource.query(sql);
         break;
 
       case 'near_expiry':
         sql = `SELECT 
-                        HanaPart, Description,
-                        ExpirationDate,
-                        DATEDIFF(ExpirationDate, CURDATE()) AS DaysRemaining,
-                        QtyRemain, PUID,
-                        Loc_Shelf AS Shelf, Loc_Level AS Level, Loc_Box AS Box,
-                        StatusName
+                        PUID,
+                        HanaPart,
+                        Description,
+                        QtyRemain,
+                        Qty AS QtyOriginal,
+                        Loc_Shelf AS Shelf,
+                        Loc_Level AS Level,
+                        Loc_Box AS Box,
+                        DATE(ExpirationDate) AS ExpirationDate,
+                        'Near expiry' AS ExpiryStatus,
+                        DATEDIFF(DATE(ExpirationDate), CURDATE()) AS DaysRemaining,
+                        NULL AS DaysOverdue,
+                        StatusName,
+                        LotNo,
+                        DateCode
                     FROM inventory_receive
-                    WHERE ExpirationDate BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+                    WHERE DATE(ExpirationDate) >= CURDATE()
+                      AND DATE(ExpirationDate) <= DATE_ADD(CURDATE(), INTERVAL ${ABDUL_NEAR_EXPIRY_DAYS} DAY)
                       AND ExpirationDate IS NOT NULL
                       AND QtyRemain > 0
-                    ORDER BY ExpirationDate ASC`;
+                    ORDER BY ExpirationDate ASC, PUID ASC`;
         data = await this.dataSource.query(sql);
         break;
 
       case 'find_puid':
-        sql = `SELECT 
-                        PUID, HanaPart, Description,
-                        QtyRemain, Qty AS QtyOriginal,
-                        Loc_Shelf AS Shelf, Loc_Level AS Level, Loc_Box AS Box,
-                        ExpirationDate, StatusName, LotNo, DateCode
-                    FROM inventory_receive
-                    WHERE PUID = ?
+        sql = `SELECT
+                        base.PUID,
+                        base.HanaPart,
+                        base.Description,
+                        base.QtyRemain,
+                        base.Qty AS QtyOriginal,
+                        base.Loc_Shelf AS Shelf,
+                        base.Loc_Level AS Level,
+                        base.Loc_Box AS Box,
+                        DATE(base.ExpirationDate) AS ExpirationDate,
+                        CASE
+                          WHEN DATE(base.ExpirationDate) < CURDATE() THEN 'Expired'
+                          WHEN DATE(base.ExpirationDate) <= DATE_ADD(CURDATE(), INTERVAL ${ABDUL_NEAR_EXPIRY_DAYS} DAY) THEN 'Near expiry'
+                          ELSE 'Normal'
+                        END AS ExpiryStatus,
+                        base.StatusName,
+                        base.LotNo,
+                        base.DateCode
+                    FROM inventory_receive base
+                    WHERE base.PUID = ?
                     LIMIT 1`;
         data = await this.dataSource.query(sql, [param]);
         break;

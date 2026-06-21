@@ -6,6 +6,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import ListAltIcon from '@mui/icons-material/ListAlt';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +15,8 @@ import { DASHBOARD_MODULES } from '../../routes/dashboardModules';
 import { type MenuKey } from '../../shared/rbac/permissions';
 import { usePicklistNotify } from '../../hooks/usePicklistNotify';
 import * as warehouseService from '../../services/warehouseService';
+
+const VALOR_BI_URL = 'http://194.10.10.15/cust_report/login.aspx';
 
 function useLiveClock() {
   const [now, setNow] = useState(() => new Date());
@@ -182,6 +185,28 @@ export function DashboardPage() {
             </RouterLink>
           );
         })}
+        <a
+          href={VALOR_BI_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="module-card"
+          style={
+            {
+              '--hover-color': '#0f766e',
+              '--icon-bg': '#ccfbf1',
+              '--icon-color': '#0f766e',
+            } as React.CSSProperties
+          }
+        >
+          <div className="module-icon">
+            <MonitorHeartIcon sx={{ fontSize: 22 }} />
+          </div>
+          <div className="module-title">{t('pages:dashboardValorBiTitle')}</div>
+          <div className="module-desc">{t('pages:dashboardValorBiDesc')}</div>
+          <div className="card-action">
+            {t('common:enter')} <OpenInNewIcon sx={{ fontSize: 14 }} />
+          </div>
+        </a>
       </div>
     </>
   );

@@ -207,13 +207,13 @@ export class WarehouseAdminController {
   // --- Products ---
 
   @Get('fifo-settings')
-  @ApiOperation({ summary: 'Get FIFO issue policy settings' })
+  @ApiOperation({ summary: 'Get issue policy settings (FIFO / FEFO)' })
   getFifoSettings(@CurrentUser() user: AuthenticatedUser) {
     return this.appSettingsService.getFifoSettings(user.lang === 'en');
   }
 
   @Patch('fifo-settings')
-  @ApiOperation({ summary: 'Update FIFO issue policy (password required)' })
+  @ApiOperation({ summary: 'Update issue policy (password required)' })
   updateFifoSettings(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateFifoSettingsDto,

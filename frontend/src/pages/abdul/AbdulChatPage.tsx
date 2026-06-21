@@ -7,6 +7,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { askAbdulChat, getAbdulChatErrorMessage, type AbdulChatResponse } from '../../services/abdulChatService';
+import { formatFactoryDate, parseFactoryDate } from '../../utils/dateTime';
 
 const INTENT_KEYS = [
   'find_location',
@@ -38,6 +39,37 @@ const COLUMN_KEYS = [
 ] as const;
 
 type ColumnKey = (typeof COLUMN_KEYS)[number];
+
+function getExpiryStatus(row: Record<string, string | number | null | undefined>) {
+  const explicitStatus = String(row.ExpiryStatus ?? '');
+  if (explicitStatus === 'Expired') {
+    return { label: 'Expired', kind: 'danger' as const };
+  }
+  if (explicitStatus === 'Near expiry') {
+    return { label: 'Near expiry', kind: 'warning' as const };
+  }
+  if (explicitStatus === 'Normal') {
+    return { label: 'Normal', kind: 'success' as const };
+  }
+
+  const daysRemaining = row.DaysRemaining;
+  const daysOverdue = row.DaysOverdue;
+
+  const overdueNum = Number(daysOverdue);
+  if (!Number.isNaN(overdueNum) && overdueNum > 0) {
+    return { label: 'Expired', kind: 'danger' as const };
+  }
+
+  const remainingNum = Number(daysRemaining);
+  if (!Number.isNaN(remainingNum)) {
+    if (remainingNum <= 7) {
+      return { label: 'Near expiry', kind: 'warning' as const };
+    }
+    return { label: 'Normal', kind: 'success' as const };
+  }
+
+  return { label: 'Unknown', kind: 'info' as const };
+}
 
 function renderCell(key: string, val: string | number | null | undefined) {
   if (key === 'DaysRemaining') {
@@ -83,10 +115,11 @@ function renderCell(key: string, val: string | number | null | undefined) {
 
   if (key === 'ExpirationDate') {
     if (!val) return <span className="abdul-muted">—</span>;
-    const dateStr = String(val).substring(0, 10);
+    const dateStr = formatFactoryDate(val) ?? String(val);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const exp = new Date(`${dateStr}T00:00:00`);
+    const exp = parseFactoryDate(val) ?? new Date(`${dateStr}T00:00:00`);
+    exp.setHours(0, 0, 0, 0);
     if (exp < today) {
       return <span className="abdul-badge abdul-badge--danger">{dateStr}</span>;
     }
@@ -102,6 +135,20 @@ function renderCell(key: string, val: string | number | null | undefined) {
       return <span className="abdul-badge abdul-badge--warning">{val}</span>;
     }
     return <span className="abdul-badge abdul-badge--success">{val}</span>;
+  }
+
+  if (key === 'ExpiryStatus') {
+    const status = String(val ?? '');
+    if (status === 'Expired') {
+      return <span className="abdul-badge abdul-badge--danger">หมดอายุ</span>;
+    }
+    if (status === 'Near expiry') {
+      return <span className="abdul-badge abdul-badge--warning">ใกล้หมดอายุ</span>;
+    }
+    if (status === 'Normal') {
+      return <span className="abdul-badge abdul-badge--success">ปกติ</span>;
+    }
+    return <span className="abdul-badge abdul-badge--info">{status || '—'}</span>;
   }
 
   if (val === null || val === undefined) {
@@ -185,7 +232,9 @@ export function AbdulChatPage() {
   };
 
   const tableKeys =
-    response?.data && response.data.length > 0 ? Object.keys(response.data[0]) : [];
+    response?.data && response.data.length > 0
+      ? ['ExpiryStatus', ...Object.keys(response.data[0]).filter((key) => key !== 'DaysRemaining' && key !== 'DaysOverdue' && key !== 'ExpiryStatus')]
+      : [];
 
   return (
     <div className="abdul-chat-page">
@@ -314,13 +363,21 @@ export function AbdulChatPage() {
                         </td>
                       </tr>
                     ) : (
-                      response.data.map((row, idx) => (
+                      response.data.map((row, idx) => {
+                        const expiryStatus = getExpiryStatus(row);
+                        const displayRow: Record<string, string | number | null | undefined> = {
+                          ExpiryStatus: row.ExpiryStatus ?? expiryStatus.label,
+                          ...row,
+                        };
+
+                        return (
                         <tr key={idx}>
                           {tableKeys.map((key) => (
-                            <td key={key}>{renderCell(key, row[key])}</td>
+                            <td key={key}>{renderCell(key, displayRow[key])}</td>
                           ))}
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

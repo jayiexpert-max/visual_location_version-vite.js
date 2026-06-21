@@ -122,7 +122,7 @@ export class AppSettingsService implements OnModuleInit {
   ): Promise<FifoSettingsResponse> {
     if (!isValidFifoIssueMode(fifoIssueMode)) {
       throw new BadRequestException({
-        message: 'Invalid FIFO issue mode',
+        message: 'Invalid issue mode',
         code: 'FIFO_INVALID_MODE',
       });
     }

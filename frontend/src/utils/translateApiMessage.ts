@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 const EXACT_KEYS: Record<string, string> = {
   'PUID is required': 'pages:apiMsgPuidRequired',
   'PUID expired — send for shelf-life extension': 'pages:apiMsgPuidExpired',
-  'FIFO violation — issue earlier-expiration stock first': 'pages:apiMsgFifoViolation',
+  'FEFO violation — issue earlier-expiration stock first': 'pages:apiMsgFifoViolation',
   'PicklistID and PUID are required': 'pages:apiMsgPicklistPuidRequired',
   'Operator is required': 'pages:apiMsgOperatorRequired',
   'PUID not found in local stock or already withdrawn': 'pages:apiMsgPuidNotInStock',
@@ -35,7 +35,7 @@ const PATTERN_RULES: Array<{
     map: (m) => ({ puid: m[1].trim() }),
   },
   {
-    pattern: /^FIFO violation — issue (.+) first \(earlier expiration\)$/i,
+    pattern: /^FEFO violation — issue (.+) first \(earlier expiration\)$/i,
     key: 'pages:apiMsgFifoViolationPuid',
     map: (m) => ({ puid: m[1].trim() }),
   },
@@ -45,7 +45,7 @@ const PATTERN_RULES: Array<{
     map: (m) => ({ puid: m[1].trim() }),
   },
   {
-    pattern: /^FIFO violation! Issue (.+) first \(earlier expiration\)$/i,
+    pattern: /^FEFO violation! Issue (.+) first \(earlier expiration\)$/i,
     key: 'pages:apiMsgFifoViolationStrict',
     map: (m) => ({ puid: m[1].trim() }),
   },
