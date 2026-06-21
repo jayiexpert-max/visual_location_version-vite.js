@@ -9,6 +9,7 @@ import * as inventoryService from '../../services/inventoryService';
 import * as ioService from '../../services/ioService';
 import { precheckIssuePuid } from '../../utils/picklistIssuePrecheck';
 import {
+  alertPendingPicklists,
   alertNewPicklists,
   bindPicklistAudioUnlock,
   countPendingPicklists,
@@ -207,11 +208,13 @@ export function PicklistPage() {
     (parsed: ReturnType<typeof parseOpenPicklistsResponse>, options?: { silent?: boolean }) => {
       const silent = options?.silent ?? false;
       const newIds = detectNewPicklistIds(parsed.picklists, issueStateRef.current);
-      if (newIds.length) {
-        alertNewPicklists(newIds);
-        showAlert('main', 'success', t('pages:picklistNewAlert', { ids: newIds.join(', ') }));
-      } else if (!silent && parsed.picklists.length > 0) {
-        showAlert('main', 'info', t('pages:picklistDataArrived', { count: parsed.picklists.length }));
+      const pendingCount = countPendingPicklists(parsed.picklists, issueStateRef.current);
+      if (pendingCount > 0 && newIds.length) {
+        alertNewPicklists(newIds, pendingCount);
+        showAlert('main', 'success', t('pages:picklistNewAlert', { ids: newIds.join(', '), count: pendingCount }));
+      } else if (!silent && pendingCount > 0 && parsed.picklists.length > 0) {
+        alertPendingPicklists(pendingCount);
+        showAlert('main', 'info', t('pages:picklistPendingAlert', { count: pendingCount }));
       } else if (!silent) {
         hideAlert();
       }

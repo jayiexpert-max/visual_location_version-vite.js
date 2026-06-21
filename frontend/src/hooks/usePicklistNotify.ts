@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import * as cpkService from '../services/cpkService';
 import {
+  alertPendingPicklists,
   alertNewPicklists,
   bindPicklistAudioUnlock,
   countPendingPicklists,
@@ -36,8 +37,10 @@ export function usePicklistNotify(enabled: boolean) {
       });
       const pending = countPendingPicklists(list, stateMapRef.current);
       const newIds = detectNewPicklistIds(list, stateMapRef.current);
-      if (newIds.length) {
-        alertNewPicklists(newIds);
+      if (pending > 0 && newIds.length) {
+        alertNewPicklists(newIds, pending);
+      } else if (pending > 0) {
+        alertPendingPicklists(pending);
       }
       return { list, pending };
     },

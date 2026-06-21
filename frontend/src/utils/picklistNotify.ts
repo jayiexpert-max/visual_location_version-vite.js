@@ -48,6 +48,19 @@ function statusImpliesComplete(st: string): boolean {
   );
 }
 
+function statusImpliesPending(st: string): boolean {
+  const s = st.toLowerCase();
+  return (
+    s.includes('รอจ่าย') ||
+    s.includes('ค้างจ่าย') ||
+    s.includes('จ่ายบางส่วน') ||
+    s.includes('partial') ||
+    s.includes('progress') ||
+    s.includes('open') ||
+    s.includes('pending')
+  );
+}
+
 function parseReqQtyNumericFromSapInfo(sapInfo: unknown): number | null {
   const m = String(sapInfo ?? '').match(/_\{([0-9]+(?:[.,][0-9]+)?)\}\s*$/);
   if (!m) return null;
@@ -104,6 +117,7 @@ export function issueStateFromHeader(row: PicklistRow): PicklistIssueState | nul
 
   const st = String(pickField(row, ['Status', 'PicklistStatus', 'State', 'IssueStatus']) || '');
   if (statusImpliesComplete(st)) return 'complete';
+  if (statusImpliesPending(st)) return 'partial';
   const lower = st.toLowerCase();
   if (lower.includes('partial') || lower.includes('progress')) return 'partial';
   return null;
@@ -136,6 +150,9 @@ function resolveIssueState(row: PicklistRow, stateMap?: Record<string, PicklistI
   if (stateMap && id && stateMap[id]) return stateMap[id];
   const fromHeader = issueStateFromHeader(row);
   if (fromHeader !== null) return fromHeader;
+  const st = String(pickField(row, ['PicklistStatus', 'Status', 'LineStatus', 'ItemStatus', 'State']) || '');
+  if (statusImpliesComplete(st)) return 'complete';
+  if (statusImpliesPending(st)) return 'partial';
   return 'open';
 }
 
@@ -257,13 +274,15 @@ export function playPicklistBeep(): void {
   });
 }
 
-export function speakNewPicklists(newIds: string[]): void {
+export function speakNewPicklists(newIds: string[], pendingCount?: number): void {
   if (!('speechSynthesis' in window) || !newIds.length) return;
   window.speechSynthesis.cancel();
   const msg =
-    newIds.length === 1
-      ? i18n.t('pages:apiMsgPicklistNewSystemMessageSingle', { id: newIds[0] })
-      : i18n.t('pages:apiMsgPicklistNewSystemMessageMulti', { count: newIds.length });
+    typeof pendingCount === 'number' && pendingCount > 0
+      ? i18n.t('pages:apiMsgPicklistPendingIssue', { count: pendingCount })
+      : newIds.length === 1
+        ? i18n.t('pages:apiMsgPicklistNewSystemMessageSingle', { id: newIds[0] })
+        : i18n.t('pages:apiMsgPicklistNewSystemMessageMulti', { count: newIds.length });
   const utter = new SpeechSynthesisUtterance(msg);
   utter.lang = i18n.language?.startsWith('en') ? 'en-US' : 'th-TH';
   utter.rate = i18n.language?.startsWith('en') ? 0.92 : 0.88;
@@ -272,10 +291,24 @@ export function speakNewPicklists(newIds: string[]): void {
   window.speechSynthesis.speak(utter);
 }
 
-export function alertNewPicklists(newIds: string[]): void {
+export function alertNewPicklists(newIds: string[], pendingCount?: number): void {
   if (!newIds.length) return;
   playPicklistBeep();
-  speakNewPicklists(newIds);
+  speakNewPicklists(newIds, pendingCount);
+}
+
+export function alertPendingPicklists(count: number): void {
+  if (count <= 0) return;
+  playPicklistBeep();
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const msg = i18n.t('pages:apiMsgPicklistPendingIssue', { count });
+  const utter = new SpeechSynthesisUtterance(msg);
+  utter.lang = i18n.language?.startsWith('en') ? 'en-US' : 'th-TH';
+  utter.rate = i18n.language?.startsWith('en') ? 0.92 : 0.88;
+  utter.pitch = 1.05;
+  utter.volume = 1;
+  window.speechSynthesis.speak(utter);
 }
 
 export function bindPicklistAudioUnlock(): () => void {

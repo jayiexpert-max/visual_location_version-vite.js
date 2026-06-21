@@ -25,6 +25,11 @@ const PATTERN_RULES: Array<{
   map: (match: RegExpMatchArray) => Record<string, string | number>;
 }> = [
   {
+    pattern: /^Service Rejected: คำขอมากเกินไปสำหรับสถานีนี้ กรุณาลองใหม่อีกครั้ง\s*\|\s*Rate limit exceeded for this station session\. Please try again later\.?$/i,
+    key: 'pages:apiMsgStationRateLimited',
+    map: () => ({}),
+  },
+  {
     pattern: /^PUID expired — send for shelf-life extension\. Use: (.+)$/i,
     key: 'pages:apiMsgPuidExpiredUse',
     map: (m) => ({ puid: m[1].trim() }),
@@ -54,6 +59,20 @@ export function translateApiMessage(
   if (!message) return '';
   const trimmed = message.trim();
   if (!trimmed) return '';
+
+  if (trimmed.includes('|')) {
+    const segments = trimmed
+      .split('|')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const thaiSegment = segments.find((part) => /[\u0E00-\u0E7F]/.test(part));
+    if (thaiSegment) {
+      return translateApiMessage(thaiSegment, t);
+    }
+    if (segments.length > 0) {
+      return translateApiMessage(segments[0], t);
+    }
+  }
 
   const exactKey = EXACT_KEYS[trimmed];
   if (exactKey) return t(exactKey);
