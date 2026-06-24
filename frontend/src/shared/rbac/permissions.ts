@@ -33,7 +33,6 @@ export const ROLE_MENU_ACCESS: Record<UserRole, readonly MenuKey[]> = {
     'rackOverview',
     'expiryCheck',
     'stockReports',
-    'handheld',
     'abdulAi',
   ],
   material_prep: [
@@ -48,7 +47,6 @@ export const ROLE_MENU_ACCESS: Record<UserRole, readonly MenuKey[]> = {
     'rackOverview',
     'expiryCheck',
     'stockReports',
-    'handheld',
     'abdulAi',
   ],
   admin: [
@@ -67,7 +65,6 @@ export const ROLE_MENU_ACCESS: Record<UserRole, readonly MenuKey[]> = {
     'stockReports',
     'receiveList',
     'userManagement',
-    'handheld',
     'abdulAi',
   ],
   manage: [

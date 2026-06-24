@@ -25,6 +25,37 @@ function normalizePuid(value: string): string {
   return value.trim().toUpperCase().replace(/^VL/i, '');
 }
 
+function extractCpkWarnings(warnings: unknown[] | undefined): string[] {
+  if (!Array.isArray(warnings)) return [];
+  return warnings
+    .map((entry) => {
+      if (typeof entry === 'string') return entry.trim();
+      if (entry && typeof entry === 'object') {
+        const obj = entry as Record<string, unknown>;
+        const message = obj.Message ?? obj.message;
+        return typeof message === 'string' ? message.trim() : '';
+      }
+      return '';
+    })
+    .filter((msg) => msg.length > 0);
+}
+
+function formatCpkResultMessage(
+  cpk: cpkService.CpkBookingOutResponse,
+  fallback: string,
+): string {
+  const status = String(cpk.Status ?? '').trim().toUpperCase();
+  const message = String(cpk.Message ?? '').trim();
+  const warnings = extractCpkWarnings(cpk.Warnings as unknown[] | undefined);
+  const parts: string[] = [];
+  if (status) parts.push(`[${status}]`);
+  if (message) parts.push(message);
+  if (warnings.length) {
+    parts.push(`${warnings.length} warning(s): ${warnings.join('; ')}`);
+  }
+  return parts.length ? parts.join(' ') : fallback;
+}
+
 function previewTone(
   loading: boolean,
   error: string | null,
@@ -51,9 +82,13 @@ export function BookingOutPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [result, setResult] = useState<{ kind: 'success' | 'error'; message: string } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{
+    kind: 'success' | 'error';
+    message: string;
+    cpkStatus?: string;
+    cpkMessage?: string;
+    cpkWarnings?: string[];
+  } | null>(null);
   const [successCountdown, setSuccessCountdown] = useState<number | null>(null);
 
   const eligibility = preview?.booking_eligibility?.[destination];
@@ -126,9 +161,16 @@ export function BookingOutPage() {
         operator: user?.username ?? '',
         destination,
       }),
-    onSuccess: () => {
+    onSuccess: (cpk) => {
       setConfirmOpen(false);
-      setResult({ kind: 'success', message: t('pages:bookingOutSuccess') });
+      const warnings = extractCpkWarnings(cpk.Warnings as unknown[] | undefined);
+      setResult({
+        kind: 'success',
+        message: formatCpkResultMessage(cpk, t('pages:bookingOutSuccess')),
+        cpkStatus: cpk.Status ? String(cpk.Status) : undefined,
+        cpkMessage: cpk.Message ? String(cpk.Message) : undefined,
+        cpkWarnings: warnings.length ? warnings : undefined,
+      });
       setSuccessCountdown(SUCCESS_RESET_SEC);
       setPreview(null);
       setPuid('');
@@ -266,6 +308,21 @@ export function BookingOutPage() {
                       <dd>{preview.cpk_effective_remain}</dd>
                     </>
                   )}
+                  {preview.cpk_station_check && (
+                    <>
+                      <dt>{t('pages:bookingCpkStationCheck')}</dt>
+                      <dd>
+                        [{preview.cpk_station_check.Status}]{' '}
+                        {preview.cpk_station_check.Message || '—'}
+                      </dd>
+                    </>
+                  )}
+                  {preview.preview_sources?.length > 0 && (
+                    <>
+                      <dt>{t('pages:bookingSources')}</dt>
+                      <dd>{preview.preview_sources.join(', ')}</dd>
+                    </>
+                  )}
                 </dl>
               </>
             )}
@@ -360,6 +417,33 @@ export function BookingOutPage() {
                 </small>
               )}
             </div>
+            {(result.cpkStatus || result.cpkMessage || result.cpkWarnings?.length) && (
+              <dl className="fx-booking-preview-grid fx-booking-result-cpk">
+                <dt>{t('pages:bookingCpkResponse')}</dt>
+                <dd>
+                  {result.cpkStatus && (
+                    <div>
+                      {t('pages:bookingCpkStatus')}: <strong>{result.cpkStatus}</strong>
+                    </div>
+                  )}
+                  {result.cpkMessage && (
+                    <div>
+                      {t('pages:bookingCpkMessage')}: {result.cpkMessage}
+                    </div>
+                  )}
+                  {result.cpkWarnings && result.cpkWarnings.length > 0 && (
+                    <div>
+                      {t('pages:bookingCpkWarnings')}:
+                      <ul>
+                        {result.cpkWarnings.map((w) => (
+                          <li key={w}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </dd>
+              </dl>
+            )}
           </div>
         )}
       </div>

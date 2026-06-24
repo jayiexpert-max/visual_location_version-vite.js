@@ -156,6 +156,25 @@ export class HighlightGateway implements OnGatewayInit, OnGatewayConnection {
       return true;
     }
 
+    const allowedIps = [
+      ...(this.configService.get<string[]>('tv.allowedIps') ?? []),
+      ...(this.configService.get<string[]>('tv.layout3dAllowedIps') ?? []),
+    ];
+    const forwarded = client.handshake.headers['x-forwarded-for'];
+    const forwardedValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const rawIp = forwardedValue?.split(',')[0]?.trim() || client.handshake.address || '';
+    const clientIp = rawIp.startsWith('::ffff:') ? rawIp.slice(7) : rawIp;
+    const ipAllowed = allowedIps.some((entry) => {
+      const rule = String(entry || '').trim().replace(/^::ffff:/, '');
+      if (!rule) return false;
+      if (rule === '*') return true;
+      if (rule.endsWith('*')) return clientIp.startsWith(rule.slice(0, -1));
+      return clientIp === rule;
+    });
+    if (ipAllowed) {
+      return true;
+    }
+
     const token = auth.token;
     if (!token || typeof token !== 'string') {
       this.logger.warn(`Socket connection rejected: missing credentials (${client.id})`);

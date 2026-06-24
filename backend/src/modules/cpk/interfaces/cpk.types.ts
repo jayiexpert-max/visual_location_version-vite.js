@@ -3,7 +3,8 @@ export type CpkStatus = 'S' | 'E';
 export interface CpkResponseBody {
   Status?: CpkStatus;
   Message?: string;
-  Warnings?: string[];
+  ReceiveDone?: boolean;
+  Warnings?: unknown[];
   PublicUID?: string;
   ExpiredDate?: string;
   [key: string]: unknown;

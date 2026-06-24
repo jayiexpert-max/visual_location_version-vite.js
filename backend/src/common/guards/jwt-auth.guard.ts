@@ -48,6 +48,8 @@ export class JwtAuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
+      ip?: string;
+      socket?: { remoteAddress?: string | null };
       user?: AuthenticatedUser;
     }>();
 
@@ -115,22 +117,35 @@ export class JwtAuthGuard implements CanActivate {
 
   private authenticateTvKiosk(request: {
     headers: Record<string, string | string[] | undefined>;
+    ip?: string;
+    socket?: { remoteAddress?: string | null };
     user?: AuthenticatedUser;
   }): boolean {
     const configuredKey = this.configService.get<string>('tv.kioskKey');
-    if (!configuredKey) {
-      return false;
-    }
-
     const headerValue = request.headers['x-tv-kiosk-key'];
     const providedKey = Array.isArray(headerValue)
       ? headerValue[0]
       : headerValue;
 
-    if (!providedKey || providedKey !== configuredKey) {
-      return false;
+    if (configuredKey && providedKey === configuredKey) {
+      this.assignKioskUser(request);
+      return true;
     }
 
+    const allowedIps = [
+      ...(this.configService.get<string[]>('tv.allowedIps') ?? []),
+      ...(this.configService.get<string[]>('tv.layout3dAllowedIps') ?? []),
+    ];
+    const requestIp = this.extractRequestIp(request);
+    if (this.ipMatches(requestIp, allowedIps)) {
+      this.assignKioskUser(request);
+      return true;
+    }
+
+    return false;
+  }
+
+  private assignKioskUser(request: { user?: AuthenticatedUser }): void {
     request.user = {
       id: 0,
       username: 'tv-kiosk',
@@ -138,8 +153,37 @@ export class JwtAuthGuard implements CanActivate {
       deviceType: 'tv',
       lang: 'th',
     };
+  }
 
-    return true;
+  private extractRequestIp(request: {
+    headers: Record<string, string | string[] | undefined>;
+    ip?: string;
+    socket?: { remoteAddress?: string | null };
+  }): string {
+    const forwarded = request.headers['x-forwarded-for'];
+    const forwardedValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const candidate =
+      forwardedValue?.split(',')[0]?.trim() ||
+      request.ip ||
+      request.socket?.remoteAddress ||
+      '';
+    return this.normalizeIp(candidate);
+  }
+
+  private normalizeIp(ip: string): string {
+    const normalized = ip.trim();
+    return normalized.startsWith('::ffff:') ? normalized.slice(7) : normalized;
+  }
+
+  private ipMatches(ip: string, allowlist: string[]): boolean {
+    if (!ip) return false;
+    return allowlist.some((entry) => {
+      const rule = this.normalizeIp(entry);
+      if (!rule) return false;
+      if (rule === '*') return true;
+      if (rule.endsWith('*')) return ip.startsWith(rule.slice(0, -1));
+      return ip === rule;
+    });
   }
 
   private extractBearerToken(

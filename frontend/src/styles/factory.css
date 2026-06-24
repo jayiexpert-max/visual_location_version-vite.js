@@ -286,6 +286,40 @@ div.factory-app > .fx-main {
     box-sizing: border-box;
 }
 
+.fx-route-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 40vh;
+    padding: 2rem;
+}
+
+.fx-route-error {
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #991b1b;
+    padding: 1rem 1.25rem;
+    max-width: 520px;
+}
+
+.fx-route-error h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+}
+
+.fx-route-error p {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.fx-route-error__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 .fx-main--narrow {
     max-width: 960px;
 }

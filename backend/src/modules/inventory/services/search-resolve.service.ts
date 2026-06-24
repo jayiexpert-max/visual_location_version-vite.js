@@ -24,6 +24,7 @@ function puidLookupCandidates(puid: string): string[] {
 export interface SearchResolveData {
   id: number;
   qty: number;
+  puidCount: number;
   hanaPart: string;
   puid: string;
   searchTerm: string;
@@ -108,7 +109,11 @@ export class SearchResolveService {
     const row = rows[0];
     if (!row) return null;
 
-    return this.mapRow(row, hanaPart, '', 'hanapart');
+    const puidCount = await this.countActivePuidsByHanaPart(hanaPart);
+    return {
+      ...this.mapRow(row, hanaPart, '', 'hanapart'),
+      puidCount,
+    };
   }
 
   private async findByPuid(puid: string): Promise<SearchResolveData | null> {
@@ -118,9 +123,13 @@ export class SearchResolveService {
     const lookup = await this.inventoryLookupService.lookupByPuid(puid);
     if (lookup.status === 'success' && lookup.data?.box_id && lookup.data.slot_id) {
       const box = await this.boxRepository.findById(lookup.data.box_id);
+      const puidCount = lookup.data.HanaPart
+        ? await this.countActivePuidsByHanaPart(lookup.data.HanaPart)
+        : 1;
       return {
         id: 0,
         qty: lookup.data.QtyRemain ?? lookup.data.Qty ?? 0,
+        puidCount,
         hanaPart: lookup.data.HanaPart ?? '',
         puid: lookup.data.PUID ?? puid,
         searchTerm: puid,
@@ -199,6 +208,8 @@ export class SearchResolveService {
     const row = rows[0];
     if (!row) return null;
 
+    const puidCount = row.HanaPart ? await this.countActivePuidsByHanaPart(row.HanaPart) : 1;
+
     let boxId = row.box_id ?? 0;
     let slotId = row.slot_id ?? 0;
     let slotNo = row.slot_no ?? 0;
@@ -225,6 +236,7 @@ export class SearchResolveService {
     return {
       id: 0,
       qty: row.QtyRemain ?? 0,
+      puidCount,
       hanaPart: row.HanaPart ?? '',
       puid: row.PUID ?? puid,
       searchTerm: puid,
@@ -239,6 +251,21 @@ export class SearchResolveService {
     };
   }
 
+  private async countActivePuidsByHanaPart(hanaPart: string): Promise<number> {
+    const rows = await this.dataSource.query<Array<{ puidCount: string | number }>>(
+      `SELECT COUNT(DISTINCT ir.PUID) AS puidCount
+       FROM inventory_receive ir
+       WHERE ir.HanaPart = ?
+         AND ir.PUID IS NOT NULL
+         AND ir.PUID <> ''
+         AND ir.QtyRemain > 0
+         AND ir.StatusName NOT IN ('Withdrawn', 'Empty', 'Is empty')`,
+      [hanaPart],
+    );
+
+    return Number(rows[0]?.puidCount ?? 0);
+  }
+
   private mapRow(
     row: ProductLocationRow,
     searchTerm: string,
@@ -248,6 +275,7 @@ export class SearchResolveService {
     return {
       id: row.id,
       qty: row.qty,
+      puidCount: 0,
       hanaPart: row.hana_part,
       puid,
       searchTerm,

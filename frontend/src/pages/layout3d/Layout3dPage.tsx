@@ -19,11 +19,16 @@ import { useSocketEvent } from '../../hooks/useSocket';
 import { searchResolve } from '../../services/inventoryService';
 import { getHierarchy, getBoxLayout } from '../../services/warehouseService';
 import { SocketEvents } from '../../services/socketService';
-import { getTvHighlight, type TvHighlight } from '../../services/tvService';
+import { getTvHighlight, clearTvHighlight, type TvHighlight } from '../../services/tvService';
 import { useAuthStore } from '../../store/authStore';
 import type { BoxLayout } from '../../types/warehouse';
 import { speakKiosk } from '../../utils/kioskTts';
 import { useKioskAudio } from '../../hooks/useKioskAudio';
+import {
+  isHighlightExpired,
+  useHighlightExpiryTimer,
+} from '../../hooks/useHighlightExpiryTimer';
+import * as ioService from '../../services/ioService';
 import '../../styles/layout3d-kiosk.css';
 
 const AUDIO_KEY = 'layout_audio_enabled';
@@ -173,11 +178,14 @@ export function Layout3dPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<WarehouseSceneHandle | null>(null);
   const lastSeqRef = useRef<string | null>(null);
+  const liveHighlightRef = useRef<TvHighlight | null>(null);
+  const { schedule: scheduleHighlightExpiry, clearTimer: clearHighlightExpiry } =
+    useHighlightExpiryTimer();
 
   const tvKey = searchParams.get('tv_key') ?? import.meta.env.VITE_TV_KIOSK_KEY ?? undefined;
   const langParam = searchParams.get('lang');
   const accessToken = useAuthStore((s) => s.accessToken);
-  const socketEnabled = Boolean(tvKey || accessToken);
+  const socketEnabled = true;
   const socketAuth = useMemo(
     () => (tvKey ? { kioskKey: tvKey } : accessToken ? { token: accessToken } : undefined),
     [accessToken, tvKey],
@@ -220,18 +228,37 @@ export function Layout3dPage() {
     [audioEnabled, i18n.language],
   );
 
+  const clearHighlightView = useCallback(() => {
+    clearHighlightExpiry();
+    lastSeqRef.current = null;
+    liveHighlightRef.current = null;
+    setLiveHighlight(null);
+    setBoxLayout(null);
+    sceneRef.current?.clearHighlight();
+    sceneRef.current?.resetCamera();
+  }, [clearHighlightExpiry]);
+
+  const handleHighlightExpired = useCallback(() => {
+    clearHighlightView();
+    void clearTvHighlight().catch(() => {});
+    void ioService.ioReset().catch(() => {});
+  }, [clearHighlightView]);
+
   const handleHighlight = useCallback(
     async (payload: TvHighlight | null) => {
       const handle = sceneRef.current;
-      if (!payload?.boxId) {
-        setLiveHighlight(null);
-        setBoxLayout(null);
-        handle?.clearHighlight();
-        handle?.resetCamera();
+
+      if (!payload?.boxId || isHighlightExpired(payload.expiresAt)) {
+        clearHighlightView();
         return;
       }
 
+      liveHighlightRef.current = payload;
       setLiveHighlight(payload);
+      scheduleHighlightExpiry(payload.expiresAt, () => {
+        void handleHighlightExpired();
+      });
+
       if (!handle) return;
 
       setPanelLoading(true);
@@ -253,7 +280,7 @@ export function Layout3dPage() {
         announceHighlight(payload);
       }
     },
-    [announceHighlight],
+    [announceHighlight, clearHighlightView, handleHighlightExpired, scheduleHighlightExpiry],
   );
 
   useSocketEvent<TvHighlight>(
@@ -268,11 +295,7 @@ export function Layout3dPage() {
   useSocketEvent<null>(
     SocketEvents.highlightClear,
     () => {
-      lastSeqRef.current = null;
-      setLiveHighlight(null);
-      setBoxLayout(null);
-      sceneRef.current?.clearHighlight();
-      sceneRef.current?.resetCamera();
+      clearHighlightView();
     },
     socketEnabled,
     socketAuth,
@@ -336,11 +359,15 @@ export function Layout3dPage() {
           }
         }
 
-        if (tvKey && !cancelled) {
+        if (!cancelled) {
           const current = await getTvHighlight(tvKey);
-          if (current && !cancelled) {
+          if (current && !isHighlightExpired(current.expiresAt)) {
             lastSeqRef.current = current.highlightSeq;
+            liveHighlightRef.current = current;
             setLiveHighlight(current);
+            scheduleHighlightExpiry(current.expiresAt, () => {
+              void handleHighlightExpired();
+            });
             await handle.applyTvHighlight({
               productName: current.productName,
               puid: current.puid,
@@ -376,13 +403,11 @@ export function Layout3dPage() {
   }, [tvKey, announceHighlight]);
 
   useEffect(() => {
-    if (!tvKey) return;
     const interval = setInterval(() => {
       void getTvHighlight(tvKey).then((current) => {
-        if (!current) {
-          if (liveHighlight) {
-            lastSeqRef.current = null;
-            void handleHighlight(null);
+        if (!current || isHighlightExpired(current.expiresAt)) {
+          if (liveHighlightRef.current) {
+            clearHighlightView();
           }
           return;
         }
@@ -392,7 +417,7 @@ export function Layout3dPage() {
       });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [tvKey, handleHighlight, liveHighlight]);
+  }, [tvKey, handleHighlight, clearHighlightView]);
 
   const resetView = () => {
     setBoxLayout(null);
@@ -505,7 +530,12 @@ export function Layout3dPage() {
         <BoxInfoPanel
           layout={boxLayout}
           highlight={liveHighlight}
-          onClose={() => setBoxLayout(null)}
+          onClose={() => {
+            setBoxLayout(null);
+            if (!liveHighlight) {
+              sceneRef.current?.clearHighlight();
+            }
+          }}
         />
       )}
     </div>

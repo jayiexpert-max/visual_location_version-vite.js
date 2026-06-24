@@ -491,6 +491,16 @@
     font-weight: 700;
 }
 
+.fx-res-puid-status--not-warehouse {
+    color: #b91c1c;
+    font-weight: 700;
+}
+
+.fx-res-puid-status--issued {
+    color: #64748b;
+    font-weight: 700;
+}
+
 .fx-res-puid-status--pending {
     color: var(--fx-warning);
     font-weight: 700;
@@ -505,6 +515,15 @@
 .fx-res-row-received td {
     background: var(--fx-bg);
     color: var(--fx-text-muted);
+}
+
+.fx-res-row-cpk-only td {
+    background: #fef2f2;
+}
+
+.fx-res-row-issued td {
+    background: #f8fafc;
+    color: #64748b;
 }
 
 .fx-res-part-name {

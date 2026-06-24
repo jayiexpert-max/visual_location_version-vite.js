@@ -7,14 +7,12 @@ export function useSocketEvent<T>(
   enabled = true,
   auth?: SocketAuth,
 ) {
-  const authKey = auth?.token ?? auth?.kioskKey ?? '';
-
   useEffect(() => {
-    if (!enabled || !authKey) return;
+    if (!enabled) return;
     const socket = getSocket(auth);
     socket.on(event, handler);
     return () => {
       socket.off(event, handler);
     };
-  }, [auth, authKey, enabled, event, handler]);
+  }, [auth, enabled, event, handler]);
 }

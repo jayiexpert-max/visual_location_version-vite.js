@@ -7,8 +7,12 @@ export class CpkResponseDto {
   @ApiPropertyOptional({ example: 'OK' })
   Message?: string;
 
-  @ApiPropertyOptional({ type: [String], example: [] })
-  Warnings?: string[];
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { oneOf: [{ type: 'string' }, { type: 'object' }] },
+    example: [],
+  })
+  Warnings?: unknown[];
 
   [key: string]: unknown;
 }

@@ -28,20 +28,17 @@ export async function getBoxLayout(
   highlightSlotId?: number,
   tvKey?: string,
 ): Promise<BoxLayout> {
+  const params =
+    highlightSlotId != null ? { highlightSlotId } : undefined;
   const headers = tvKioskHeaders(tvKey);
   if (headers) {
     const { data } = await axios.get<ApiSuccessResponse<BoxLayout>>(
       `${API_BASE}/warehouse/boxes/${boxId}/layout`,
-      {
-        headers,
-        params: highlightSlotId != null ? { highlightSlotId } : undefined,
-      },
+      { headers, params },
     );
     return data.data;
   }
-  return apiGet<BoxLayout>(`/warehouse/boxes/${boxId}/layout`, {
-    highlightSlotId,
-  });
+  return apiGet<BoxLayout>(`/warehouse/boxes/${boxId}/layout`, params);
 }
 
 export async function getBoxProducts(boxId: number): Promise<unknown> {

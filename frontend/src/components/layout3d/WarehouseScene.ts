@@ -71,6 +71,7 @@ interface BoxMetadata {
   layout: string;
   size: number;
   originalEmissive: Color3;
+  homePosition: Vector3;
 }
 
 interface SlotMeshData {
@@ -303,6 +304,7 @@ function buildRacks(activeScene: Scene, hierarchy: WarehouseHierarchy): void {
           layout: box.layout || '1x1',
           size: boxScale,
           originalEmissive: baseMat.emissiveColor.clone(),
+          homePosition: new Vector3(bX, bY, 0),
         };
         boxMesh.metadata = meta;
         boxMeshes.set(box.id, boxMesh);
@@ -342,6 +344,33 @@ function buildRacks(activeScene: Scene, hierarchy: WarehouseHierarchy): void {
   });
 }
 
+function stopMeshAnimations(mesh: AbstractMesh): void {
+  scene?.stopAnimation(mesh);
+}
+
+function restoreBoxToHome(mesh: AbstractMesh): void {
+  stopMeshAnimations(mesh);
+  const meta = mesh.metadata as BoxMetadata;
+  if (meta?.homePosition) {
+    mesh.position = meta.homePosition.clone();
+  }
+  const mat = mesh.material as StandardMaterial | null;
+  if (mat) {
+    mat.alpha = 1;
+    mat.emissiveColor = meta?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
+  }
+}
+
+/** Return every box to its shelf position — fixes stuck boxes after interrupted animations. */
+function restoreAllBoxesToHome(): void {
+  disposeActiveBlocks();
+  for (const mesh of boxMeshes.values()) {
+    restoreBoxToHome(mesh);
+  }
+  currentFocusBox = null;
+  originalBoxPosition = null;
+}
+
 function disposeActiveBlocks(): void {
   for (const m of activeBlocks) {
     m.dispose();
@@ -354,45 +383,11 @@ function disposeActiveBlocks(): void {
 }
 
 function resetFocusInstant(): void {
-  disposeActiveBlocks();
-
-  if (currentFocusBox && originalBoxPosition) {
-    currentFocusBox.position = originalBoxPosition.clone();
-    const mat = currentFocusBox.material as StandardMaterial | null;
-    if (mat) {
-      mat.alpha = 1;
-      const meta = currentFocusBox.metadata as BoxMetadata;
-      mat.emissiveColor = meta?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
-    }
-    currentFocusBox = null;
-    originalBoxPosition = null;
-  }
+  restoreAllBoxesToHome();
 }
 
 function resetFocus(): void {
-  disposeActiveBlocks();
-
-  if (currentFocusBox && originalBoxPosition && scene) {
-    Animation.CreateAndStartAnimation(
-      'animBack',
-      currentFocusBox,
-      'position',
-      60,
-      40,
-      currentFocusBox.position,
-      originalBoxPosition,
-      Animation.ANIMATIONLOOPMODE_CONSTANT,
-    );
-    const mat = currentFocusBox.material as StandardMaterial | null;
-    if (mat) {
-      mat.alpha = 1;
-      const meta = currentFocusBox.metadata as BoxMetadata;
-      mat.emissiveColor = meta?.originalEmissive ?? new Color3(0.05, 0.1, 0.2);
-    }
-    currentFocusBox = null;
-    originalBoxPosition = null;
-  }
-
+  restoreAllBoxesToHome();
   lastHighlightData = null;
   callbacksRef?.onFocusCleared?.();
 }
@@ -535,24 +530,6 @@ function focusBox(mesh: AbstractMesh, highlightSlotId: number | null = null): Pr
       return;
     }
 
-    if (currentFocusBox && currentFocusBox !== mesh) {
-      disposeActiveBlocks();
-      if (originalBoxPosition) {
-        currentFocusBox.position = originalBoxPosition.clone();
-        const mat = currentFocusBox.material as StandardMaterial;
-        mat.alpha = 1;
-        const m = currentFocusBox.metadata as BoxMetadata;
-        mat.emissiveColor = m.originalEmissive;
-      }
-      currentFocusBox = null;
-      originalBoxPosition = null;
-    }
-
-    if (!mesh) {
-      resolve();
-      return;
-    }
-
     if (currentFocusBox === mesh && highlightSlotId) {
       void showSlotsOnBox(mesh, highlightSlotId).then(() => resolve());
       return;
@@ -563,12 +540,11 @@ function focusBox(mesh: AbstractMesh, highlightSlotId: number | null = null): Pr
       return;
     }
 
-    if (!currentFocusBox) {
-      // camera state saved implicitly — reset uses initialCameraState
-    }
+    restoreAllBoxesToHome();
 
     currentFocusBox = mesh;
-    originalBoxPosition = mesh.position.clone();
+    const meta = mesh.metadata as BoxMetadata;
+    originalBoxPosition = meta.homePosition.clone();
 
     const targetPosLocal = originalBoxPosition.clone();
     targetPosLocal.z -= 1.6;
@@ -576,6 +552,8 @@ function focusBox(mesh: AbstractMesh, highlightSlotId: number | null = null): Pr
     const rackRoot = mesh.parent as TransformNode | null;
     const rotY = rackRoot?.rotation.y ?? 0;
     const worldTarget = mesh.getAbsolutePosition().clone();
+
+    scene.stopAnimation(camera);
 
     let targetAlpha = camera.alpha;
     const targetBeta = Math.PI / 3;
@@ -651,6 +629,7 @@ function focusBox(mesh: AbstractMesh, highlightSlotId: number | null = null): Pr
       false,
       1,
       () => {
+        stopMeshAnimations(mesh);
         Animation.CreateAndStartAnimation(
           'animOut',
           mesh,
@@ -674,6 +653,7 @@ function resetCamera(): void {
   resetFocus();
 
   if (camera && initialCameraState && scene) {
+    scene.stopAnimation(camera);
     const animSpeed = 90;
     Animation.CreateAndStartAnimation(
       'camAlpha',

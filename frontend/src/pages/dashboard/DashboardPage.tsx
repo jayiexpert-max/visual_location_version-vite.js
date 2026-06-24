@@ -29,7 +29,7 @@ function useLiveClock() {
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation(['pages', 'menu', 'common']);
-  const { canAccess } = useAuth();
+  const { canAccess, user } = useAuth();
   const now = useLiveClock();
 
   const hierarchyQuery = useQuery({
@@ -65,7 +65,12 @@ export function DashboardPage() {
     );
   }, [hierarchyQuery.data]);
 
-  const modules = DASHBOARD_MODULES.filter((mod) => canAccess(mod.key as MenuKey));
+  const modules = DASHBOARD_MODULES.filter((mod) => {
+    if (mod.dashboardRoles) {
+      return user != null && mod.dashboardRoles.includes(user.role);
+    }
+    return canAccess(mod.key as MenuKey);
+  });
 
   const dateStr = now.toLocaleDateString(i18n.language === 'th' ? 'th-TH' : 'en-US', {
     day: 'numeric',

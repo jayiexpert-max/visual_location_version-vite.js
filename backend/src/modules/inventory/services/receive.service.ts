@@ -21,6 +21,11 @@ import { StockLogRepository } from '../repositories/stock-log.repository';
 import { HighlightGateway } from '../../realtime/highlight.gateway';
 import { InventoryService } from './inventory.service';
 import { MaterialsService } from '../../materials/materials.service';
+import { normalizeResNoInput } from '../utils/expiration-sync.util';
+import {
+  assertCpkReceiveAccepted,
+  extractCpkWarningMessages,
+} from '../../cpk/utils/cpk-warning.util';
 
 function isExpiredDate(value: string | Date | null | undefined): boolean {
   if (!value) return false;
@@ -109,19 +114,31 @@ export class ReceiveService {
     if (this.cpkTokenService.getMcId() && dto.reservationNo && !dto.skipCpk) {
       const cpkStarted = Date.now();
       try {
-        await this.cpkService.resPuidRecv({
-          resNo: dto.reservationNo,
-          puid: dto.puid,
+        const cpkResponse = await this.cpkService.resPuidRecv({
+          resNo: normalizeResNoInput(dto.reservationNo),
+          puid: dto.puid.trim(),
           operator: user.username,
-          location: [dto.locShelf, dto.locLevel, dto.locBox]
-            .filter(Boolean)
-            .join(' '),
+          location:
+            this.cpkService.buildLocation({
+              locShelf: dto.locShelf,
+              locLevel: dto.locLevel,
+              locBox: dto.locBox,
+            }) || undefined,
         });
+        assertCpkReceiveAccepted(cpkResponse);
+        for (const msg of extractCpkWarningMessages(cpkResponse)) {
+          if (!cpkWarnings.includes(msg)) {
+            cpkWarnings.push(msg);
+          }
+        }
         this.logger.debug(`receiveItem CPK RES_PUIDRecv ${Date.now() - cpkStarted}ms`);
       } catch (error) {
         this.logger.warn(
           `CPK RES_PUIDRecv failed for ${dto.puid}: ${error instanceof Error ? error.message : error}`,
         );
+        if (error instanceof BadGatewayException) {
+          throw error;
+        }
         throw new BadGatewayException({
           message: 'CPK receive confirmation failed',
           code: 'CPK_RECEIVE_FAILED',

@@ -245,7 +245,7 @@ export function TvDisplayPage() {
   const tvKey = searchParams.get('tv_key') ?? import.meta.env.VITE_TV_KIOSK_KEY ?? undefined;
   const langParam = searchParams.get('lang');
   const accessToken = useAuthStore((s) => s.accessToken);
-  const liveEnabled = Boolean(tvKey || accessToken);
+  const liveEnabled = true;
   const socketAuth = useMemo(
     () => (tvKey ? { kioskKey: tvKey } : accessToken ? { token: accessToken } : undefined),
     [accessToken, tvKey],

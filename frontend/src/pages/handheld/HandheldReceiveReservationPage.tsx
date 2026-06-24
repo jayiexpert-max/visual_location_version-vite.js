@@ -12,12 +12,14 @@ import {
 } from '../../utils/handheldHighlight';
 import {
   formatExpireDate,
+  getPuidLineState,
   isPuidCpkReceived,
   isPuidExpired,
+  isPuidIssuedOut,
   isPuidLocallyReceived,
-  isPuidReceived,
   normalizePuidInput,
   normalizeResNo,
+  RES_PUID_STATUS_I18N,
   resNoKey,
   type ResDetailData,
   type ResItemRow,
@@ -32,9 +34,15 @@ function formatLocation(meta: inventoryService.InventoryLookupData): string {
 }
 
 function lineStatusLabel(row: ResPuidRow, t: (k: string) => string): string {
-  if (isPuidReceived(row)) return t('pages:handheldResReceived');
-  if (isPuidLocallyReceived(row)) return t('pages:handheldResLocalOnly');
-  return t('pages:handheldResPending');
+  return t(RES_PUID_STATUS_I18N[getPuidLineState(row)]);
+}
+
+function lineBadgeClass(row: ResPuidRow): string {
+  const state = getPuidLineState(row);
+  if (state === 'received') return 'fx-badge-ok';
+  if (state === 'issued') return 'fx-badge-issued';
+  if (state === 'cpkOnly') return 'fx-badge-error';
+  return 'fx-badge-open';
 }
 
 export function HandheldReceiveReservationPage() {
@@ -43,6 +51,13 @@ export function HandheldReceiveReservationPage() {
 
   const resRef = useRef<HTMLInputElement>(null);
   const puidRef = useRef<HTMLInputElement>(null);
+
+  const focusPuid = useCallback(() => {
+    requestAnimationFrame(() => {
+      puidRef.current?.focus();
+      puidRef.current?.select();
+    });
+  }, []);
 
   const [message, setMessage] = useState<{ type: 'info' | 'success' | 'warning' | 'error'; text: string }>({
     type: 'info',
@@ -65,15 +80,6 @@ export function HandheldReceiveReservationPage() {
     resRef.current?.focus();
   }, []);
 
-  if (!canAccess('receiveReservation')) {
-    return (
-      <>
-        <HandheldTopBar title={t('pages:handheldReceiveRes')} />
-        <section className="fx-alert fx-alert-warning">{t('pages:handheldAccessDenied')}</section>
-      </>
-    );
-  }
-
   const loadReservation = useCallback(async (overrideResNo?: string) => {
     const resNo = normalizeResNo(overrideResNo ?? resInput);
     if (!resNo) {
@@ -86,6 +92,7 @@ export function HandheldReceiveReservationPage() {
     setLookup(null);
     setPuidInput('');
 
+    let loaded = false;
     try {
       const response = await reservationsService.getReservationDetail(resNo);
       if (response.status === 'success' && response.data) {
@@ -93,7 +100,7 @@ export function HandheldReceiveReservationPage() {
         setActiveResNo(key);
         setResData(response.data);
         setMessage({ type: 'info', text: t('pages:handheldResLoaded', { res: key }) });
-        setTimeout(() => puidRef.current?.focus(), 80);
+        loaded = true;
       } else {
         setResData(null);
         setActiveResNo(null);
@@ -105,8 +112,9 @@ export function HandheldReceiveReservationPage() {
       setMessage({ type: 'error', text: getErrorMessage(err, t('pages:resLoadFailed'), t) });
     } finally {
       setLoadingRes(false);
+      if (loaded) focusPuid();
     }
-  }, [resInput, t]);
+  }, [resInput, t, focusPuid]);
 
   const reloadDetailSilent = useCallback(async (resNo: string) => {
     try {
@@ -135,6 +143,34 @@ export function HandheldReceiveReservationPage() {
     return null;
   };
 
+  const rejectDuplicateScan = (puid: string) => {
+    setLookup(null);
+    setPuidInput('');
+    setMessage({ type: 'error', text: t('pages:resPuidDuplicateScan', { puid }) });
+    focusPuid();
+  };
+
+  const rejectIssuedScan = (_puid: string) => {
+    setLookup(null);
+    setPuidInput('');
+    focusPuid();
+  };
+
+  const handlePuidInputChange = (raw: string) => {
+    const next = normalizePuidInput(raw);
+    setPuidInput(next);
+    if (!next || !resData) return;
+    const match = findPuidInRes(next);
+    if (!match) return;
+    if (isPuidIssuedOut(match.puidRow)) {
+      rejectIssuedScan(next);
+      return;
+    }
+    if (isPuidLocallyReceived(match.puidRow)) {
+      rejectDuplicateScan(next);
+    }
+  };
+
   const verifyPuid = async () => {
     const puid = normalizePuidInput(puidInput);
     setPuidInput(puid);
@@ -147,9 +183,13 @@ export function HandheldReceiveReservationPage() {
       return;
     }
 
-    if (isPuidReceived(match.puidRow)) {
-      setLookup(null);
-      setMessage({ type: 'warning', text: t('pages:handheldResAlreadyReceived') });
+    if (isPuidIssuedOut(match.puidRow)) {
+      rejectIssuedScan(puid);
+      return;
+    }
+
+    if (isPuidLocallyReceived(match.puidRow)) {
+      rejectDuplicateScan(puid);
       return;
     }
 
@@ -173,12 +213,15 @@ export function HandheldReceiveReservationPage() {
           type: 'warning',
           text: t('pages:resExpiredPuidNotice', { puid, date: formatExpireDate(exp) }),
         });
+      } else if (isPuidCpkReceived(match.puidRow)) {
+        setMessage({ type: 'info', text: t('pages:resCpkAlreadyReceived') });
       } else {
         setMessage({ type: 'success', text: t('pages:handheldResPuidReady') });
       }
     } catch (err) {
       setLookup(null);
       setMessage({ type: 'error', text: getErrorMessage(err, t('pages:resVerifyFailed'), t) });
+      focusPuid();
     } finally {
       setVerifyLoading(false);
     }
@@ -252,8 +295,10 @@ export function HandheldReceiveReservationPage() {
         skipCpk,
       });
 
+      const savedLookup = lookup;
+      const savedPart = matchedPart || lookup.HanaPart;
       try {
-        await sendHandheldReceiveHighlight(lookup, matchedPart || lookup.HanaPart);
+        await sendHandheldReceiveHighlight(savedLookup, savedPart);
       } catch {
         // non-fatal — receive already saved
       }
@@ -266,10 +311,20 @@ export function HandheldReceiveReservationPage() {
       setMessage({ type: 'error', text: getErrorMessage(err, t('common:error'), t) });
     } finally {
       setSaveLoading(false);
+      focusPuid();
     }
   };
 
   const items = resData?.Items ?? [];
+
+  if (!canAccess('receiveReservation')) {
+    return (
+      <>
+        <HandheldTopBar title={t('pages:handheldReceiveRes')} />
+        <section className="fx-alert fx-alert-warning">{t('pages:handheldAccessDenied')}</section>
+      </>
+    );
+  }
 
   return (
     <>
@@ -307,7 +362,7 @@ export function HandheldReceiveReservationPage() {
       </button>
 
       {resData ? (
-        <>
+        <div className="hh-picklist-shell hh-picklist-shell--issue">
           <div className="hh-picklist-toolbar">
             <p className="hh-picklist-heading">
               RES {activeResNo} ({items.length} {t('pages:handheldResLines')})
@@ -324,23 +379,73 @@ export function HandheldReceiveReservationPage() {
 
           <p className="hh-picklist-hint">{t('pages:handheldResTapLineHint')}</p>
 
-          <div className="hh-picklist-lines">
+          <div className="hh-picklist-scan-block">
+            <label htmlFor="puid_input">{t('pages:handheldScanPuid')}</label>
+            <input
+              ref={puidRef}
+              id="puid_input"
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              value={puidInput}
+              disabled={saveLoading || verifyLoading}
+              onChange={(e) => handlePuidInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void verifyPuid();
+                }
+              }}
+            />
+
+            {lookup ? (
+              <div className="fx-handheld-summary">
+                <div><span>RES</span><strong>{activeResNo}</strong></div>
+                <div><span>PUID</span><strong>{normalizePuidInput(puidInput)}</strong></div>
+                <div><span>{t('pages:handheldPart')}</span><strong>{matchedPart || lookup.HanaPart}</strong></div>
+                <div><span>IM</span><strong>{lookup.IM ?? '-'}</strong></div>
+                <div><span>Qty</span><strong>{lookup.QtyRemain ?? lookup.Qty ?? 0}</strong></div>
+                <div><span>{t('pages:handheldLocation')}</span><strong>{formatLocation(lookup)}</strong></div>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              className="fx-btn fx-btn-secondary"
+              disabled={!puidInput || verifyLoading || saveLoading}
+              onClick={() => void verifyPuid()}
+            >
+              {verifyLoading ? t('common:loading') : t('pages:handheldVerifyPuid')}
+            </button>
+
+            <button
+              type="button"
+              className="fx-btn fx-btn-primary"
+              disabled={!lookup || saveLoading}
+              onClick={() => void confirmReceive()}
+            >
+              {saveLoading ? t('common:loading') : t('confirmReceive')}
+            </button>
+          </div>
+
+          <div className="hh-picklist-lines hh-picklist-lines-scroll">
             {items.map((item) =>
               (item.PUIDList ?? []).map((puidRow) => {
                 const puid = String(puidRow.PUID ?? '');
                 const part = String(item.PartNumber ?? '');
                 const lineKey = `${part}-${puid}`;
+                const lineState = getPuidLineState(puidRow);
                 return (
                 <button
                   type="button"
                   key={lineKey}
-                  className={`hh-picklist-line is-clickable ${isPuidReceived(puidRow) ? 'is-issued' : ''} ${selectedLineKey === lineKey ? 'is-selected' : ''}`}
+                  className={`hh-picklist-line is-clickable${lineState === 'received' ? ' is-issued' : ''}${lineState === 'issued' ? ' is-withdrawn' : ''}${lineState === 'cpkOnly' ? ' is-cpk-only' : ''}${selectedLineKey === lineKey ? ' is-selected' : ''}`}
                   onClick={() => void handleLineHighlight(part, puid, lineKey)}
                   disabled={highlightLoading}
                 >
                   <div className="hh-picklist-line-head">
                     <strong>{part || puid}</strong>
-                    <span className={`fx-badge ${isPuidReceived(puidRow) ? 'fx-badge-ok' : 'fx-badge-open'}`}>
+                    <span className={`fx-badge ${lineBadgeClass(puidRow)}`}>
                       {lineStatusLabel(puidRow, t)}
                     </span>
                   </div>
@@ -353,54 +458,7 @@ export function HandheldReceiveReservationPage() {
               }),
             )}
           </div>
-
-          <label htmlFor="puid_input">{t('pages:handheldScanPuid')}</label>
-          <input
-            ref={puidRef}
-            id="puid_input"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            value={puidInput}
-            disabled={saveLoading}
-            onChange={(e) => setPuidInput(normalizePuidInput(e.target.value))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void verifyPuid();
-              }
-            }}
-          />
-
-          {lookup ? (
-            <div className="fx-handheld-summary">
-              <div><span>RES</span><strong>{activeResNo}</strong></div>
-              <div><span>PUID</span><strong>{normalizePuidInput(puidInput)}</strong></div>
-              <div><span>{t('pages:handheldPart')}</span><strong>{matchedPart || lookup.HanaPart}</strong></div>
-              <div><span>IM</span><strong>{lookup.IM ?? '-'}</strong></div>
-              <div><span>Qty</span><strong>{lookup.QtyRemain ?? lookup.Qty ?? 0}</strong></div>
-              <div><span>{t('pages:handheldLocation')}</span><strong>{formatLocation(lookup)}</strong></div>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className="fx-btn fx-btn-secondary"
-            disabled={!puidInput || verifyLoading}
-            onClick={() => void verifyPuid()}
-          >
-            {verifyLoading ? t('common:loading') : t('pages:handheldVerifyPuid')}
-          </button>
-
-          <button
-            type="button"
-            className="fx-btn fx-btn-primary"
-            disabled={!lookup || saveLoading}
-            onClick={() => void confirmReceive()}
-          >
-            {saveLoading ? t('common:loading') : t('confirmReceive')}
-          </button>
-        </>
+        </div>
       ) : null}
     </>
   );

@@ -12,6 +12,7 @@ function tvKioskHeaders(tvKey?: string): Record<string, string> | undefined {
 export interface SearchResolveData {
   id: number;
   qty: number;
+  puidCount: number;
   hanaPart: string;
   puid: string;
   searchTerm: string;

@@ -22,6 +22,7 @@ export function SearchPage() {
     null,
   );
   const [rackView, setRackView] = useState<'grid' | 'table'>('grid');
+  const autoClearTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -29,19 +30,66 @@ export function SearchPage() {
 
   const buildSuccessMessage = useCallback(
     (data: inventoryService.SearchResolveData) => {
-      const locationLine = `📦 Rack: <b>${data.rackName}</b> → Level: <b>${data.levelNo}</b> → Box: <b>${data.boxCode}</b> → Slot: <b>${data.slotNo}</b>`;
+      const locationLine = '📦 Rack: <b>' + data.rackName + '</b> → Level: <b>' + data.levelNo + '</b> → Box: <b>' + data.boxCode + '</b> → Slot: <b>' + data.slotNo + '</b>';
       if (data.searchMode === 'puid') {
-        return `🔍 ${t('pages:searchPuidFound')}: <b>"${data.puid}"</b><br>
-          HanaPart: <b>${data.hanaPart}</b><br>
-          ${locationLine}<br>
-          ${t('pages:searchQtyRemain')}: <b>${data.qty}</b>`;
+        return '🔍 ' + t('pages:searchPuidFound') + ': <b>"' + data.puid + '"</b><br>' +
+          '          HanaPart: <b>' + data.hanaPart + '</b><br>' +
+          '          ' + locationLine + '<br>' +
+          '          ' + t('pages:searchPuidCount') + ': <b>' + (data.puidCount ?? data.qty) + '</b>';
       }
-      return `🔍 ${t('pages:searchProductFound')} <b>"${data.hanaPart}"</b><br>
-        ${locationLine}<br>
-        ${t('pages:searchQtyRemain')}: <b>${data.qty}</b>`;
+      return '🔍 ' + t('pages:searchProductFound') + ' <b>"' + data.hanaPart + '"</b><br>' +
+        '        ' + locationLine + '<br>' +
+        '        ' + t('pages:searchPuidCount') + ': <b>' + (data.puidCount ?? data.qty) + '</b>';
     },
     [t],
   );
+
+  const clearAutoClearTimer = useCallback(() => {
+    if (autoClearTimerRef.current !== null) {
+      window.clearTimeout(autoClearTimerRef.current);
+      autoClearTimerRef.current = null;
+    }
+  }, []);
+
+  const clearSearchState = useCallback(() => {
+    clearAutoClearTimer();
+    setQuery('');
+    setResult(null);
+    setMessage(null);
+    inputRef.current?.focus();
+  }, [clearAutoClearTimer]);
+
+  const handleTimedClear = useCallback(async () => {
+    clearAutoClearTimer();
+    setResult(null);
+    setMessage(null);
+    try {
+      await tvService.clearTvHighlight();
+    } catch {
+      // ignore
+    }
+    try {
+      await ioService.ioReset();
+    } catch {
+      // ignore
+    }
+    inputRef.current?.focus();
+  }, [clearAutoClearTimer]);
+
+  const scheduleAutoClear = useCallback((expiresAt?: string) => {
+    clearAutoClearTimer();
+    if (!expiresAt) return;
+
+    const expiresMs = new Date(expiresAt).getTime();
+    if (Number.isNaN(expiresMs)) return;
+
+    const delay = Math.max(0, expiresMs - Date.now());
+    autoClearTimerRef.current = window.setTimeout(() => {
+      void handleTimedClear();
+    }, delay);
+  }, [clearAutoClearTimer, handleTimedClear]);
+
+  useEffect(() => () => clearAutoClearTimer(), [clearAutoClearTimer]);
 
   const searchMutation = useMutation({
     mutationFn: async (term: string) => {
@@ -56,7 +104,7 @@ export function SearchPage() {
       setMessage({ kind: 'success', html: buildSuccessMessage(data) });
 
       try {
-        await tvService.setTvHighlight({
+        const highlight = await tvService.setTvHighlight({
           productName: data.hanaPart,
           puid: data.puid || undefined,
           boxId: data.boxId,
@@ -68,6 +116,7 @@ export function SearchPage() {
           qty: data.qty,
           actionType: 'highlight',
         });
+        scheduleAutoClear(highlight.expiresAt);
       } catch {
         // non-fatal — location still shown on rack map
       }
@@ -79,6 +128,7 @@ export function SearchPage() {
       }
     },
     onError: (err, term) => {
+      clearAutoClearTimer();
       setResult(null);
       const msg = getErrorMessage(err, t('common:error'), t);
       setMessage({
@@ -92,6 +142,7 @@ export function SearchPage() {
     event.preventDefault();
     const term = normalizePuidInput(query);
     if (!term || searchMutation.isPending) return;
+    clearAutoClearTimer();
     setQuery(term);
     setMessage(null);
     searchMutation.mutate(term);
@@ -103,12 +154,7 @@ export function SearchPage() {
     [accessToken],
   );
 
-  const clearStateLocally = useCallback(() => {
-    setQuery('');
-    setResult(null);
-    setMessage(null);
-    inputRef.current?.focus();
-  }, []);
+  const clearStateLocally = clearSearchState;
 
   useSocketEvent<null>(
     SocketEvents.highlightClear,
@@ -141,8 +187,8 @@ export function SearchPage() {
     }
   };
 
-  const highlightBoxId = result?.boxId ?? 0;
-  const highlightSlotId = result?.slotId ?? 0;
+  const highlightBoxId = result?.boxId ?? null;
+  const highlightSlotId = result?.slotId ?? null;
 
   return (
     <div className="fx-scan-page">
@@ -218,12 +264,13 @@ export function SearchPage() {
 
       <section className="fx-rack-section">
         <RackOverviewSection
-          highlightBoxId={highlightBoxId}
-          highlightSlotId={highlightSlotId}
+          highlightBoxId={highlightBoxId ?? undefined}
+          highlightSlotId={highlightSlotId ?? undefined}
           showTitle={false}
           view={rackView}
           onViewChange={setRackView}
           showToolbar={false}
+          quantityMode="puid"
         />
       </section>
     </div>

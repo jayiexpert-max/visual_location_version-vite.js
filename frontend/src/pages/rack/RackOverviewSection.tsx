@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -26,21 +26,24 @@ import { rackSlotGridCols, rackSlotGridFromIndex, rackSlotGridRows } from '../..
 
 const ROWS_PER_PAGE = 10;
 
-function boxQty(box: HierarchyBox): number {
+type QuantityMode = 'stock' | 'puid';
+
+function boxQty(box: HierarchyBox, quantityMode: QuantityMode = 'stock'): number {
   return box.slots.reduce((s, sl) => {
     const puidQty = sl.puids?.length ?? 0;
-    return s + Math.max(sl.product?.qty ?? 0, puidQty);
+    const stockQty = sl.product?.qty ?? 0;
+    return s + (quantityMode === 'puid' ? puidQty || stockQty : Math.max(stockQty, puidQty));
   }, 0);
 }
 
-function rackStats(rack: HierarchyRack) {
+function rackStats(rack: HierarchyRack, quantityMode: QuantityMode = 'stock') {
   let totalQty = 0;
   let activeBoxes = 0;
   let totalBoxes = 0;
   for (const level of rack.levels) {
     for (const box of level.boxes) {
       totalBoxes++;
-      const q = boxQty(box);
+      const q = boxQty(box, quantityMode);
       totalQty += q;
       if (q > 0) activeBoxes++;
     }
@@ -112,11 +115,13 @@ function StatCard({
 function BoxBadge({
   box,
   onSelect,
+  quantityMode,
 }: {
   box: HierarchyBox;
   onSelect: (box: HierarchyBox) => void;
+  quantityMode: QuantityMode;
 }) {
-  const qty = boxQty(box);
+  const qty = boxQty(box, quantityMode);
   const active = qty > 0;
   return (
     <button
@@ -136,9 +141,11 @@ function BoxBadge({
 function GridView({
   hierarchy,
   onBoxSelect,
+  quantityMode,
 }: {
   hierarchy: WarehouseHierarchy;
   onBoxSelect: (box: HierarchyBox, initialLayout: BoxLayout) => void;
+  quantityMode: QuantityMode;
 }) {
   return (
     <div className="rack-grid">
@@ -154,6 +161,7 @@ function GridView({
                     <BoxBadge
                       key={box.id}
                       box={box}
+                      quantityMode={quantityMode}
                       onSelect={() => onBoxSelect(box, buildBoxLayoutPreview(rack, level, box))}
                     />
                   ))}
@@ -177,18 +185,18 @@ interface FlatRow {
   hanaParts: string[];
 }
 
-function buildFlatRows(hierarchy: WarehouseHierarchy): FlatRow[] {
+function buildFlatRows(
+  hierarchy: WarehouseHierarchy,
+  quantityMode: QuantityMode = 'stock',
+): FlatRow[] {
   const rows: FlatRow[] = [];
   for (const rack of hierarchy.racks) {
     for (const level of rack.levels) {
       for (const box of level.boxes) {
-        const qty = boxQty(box);
+        const qty = boxQty(box, quantityMode);
         const parts = box.slots
           .filter(
-            (s) =>
-              s.product &&
-              Math.max(s.product.qty, s.puids?.length ?? 0) > 0 &&
-              s.product.name.trim(),
+            (s) => s.product && s.product.name.trim(),
           )
           .map((s) => s.product!.name.trim());
         const unique = [...new Set(parts)];
@@ -202,13 +210,15 @@ function buildFlatRows(hierarchy: WarehouseHierarchy): FlatRow[] {
 function TableView({
   hierarchy,
   onBoxSelect,
+  quantityMode,
 }: {
   hierarchy: WarehouseHierarchy;
   onBoxSelect: (box: HierarchyBox, initialLayout: BoxLayout) => void;
+  quantityMode: QuantityMode;
 }) {
   const { t } = useTranslation(['pages', 'common']);
   const [page, setPage] = useState(1);
-  const rows = useMemo(() => buildFlatRows(hierarchy), [hierarchy]);
+  const rows = useMemo(() => buildFlatRows(hierarchy, quantityMode), [hierarchy, quantityMode]);
   const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
   const sliced = rows.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
@@ -325,16 +335,18 @@ interface RackOverviewSectionProps {
   view?: 'grid' | 'table';
   onViewChange?: (view: 'grid' | 'table') => void;
   showToolbar?: boolean;
+  quantityMode?: QuantityMode;
 }
 
 export function RackOverviewSection({
-  highlightBoxId = 0,
-  highlightSlotId = 0,
+  highlightBoxId,
+  highlightSlotId,
   showTitle = true,
   title,
   view: controlledView,
   onViewChange,
   showToolbar = true,
+  quantityMode = 'stock',
 }: RackOverviewSectionProps) {
   const { t } = useTranslation(['pages', 'common']);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -351,6 +363,7 @@ export function RackOverviewSection({
   const [selectedBox, setSelectedBox] = useState<HierarchyBox | null>(null);
   const [selectedLayout, setSelectedLayout] = useState<BoxLayout | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const lastAutoOpenKey = useRef<string | null>(null);
 
   const loadHierarchy = useCallback(async () => {
     setLoading(true);
@@ -384,19 +397,44 @@ export function RackOverviewSection({
     let totalBoxes = 0;
     let activeBoxes = 0;
     for (const rack of hierarchy.racks) {
-      const rs = rackStats(rack);
+      const rs = rackStats(rack, quantityMode);
       totalProducts += rs.totalQty;
       totalBoxes += rs.totalBoxes;
       activeBoxes += rs.activeBoxes;
     }
     return { totalProducts, totalRacks: hierarchy.racks.length, totalBoxes, activeBoxes };
-  }, [hierarchy]);
+  }, [hierarchy, quantityMode]);
 
   const handleBoxSelect = (box: HierarchyBox, initialLayout: BoxLayout) => {
     setSelectedBox(box);
     setSelectedLayout(initialLayout);
     setPanelOpen(true);
   };
+
+  useEffect(() => {
+    if (highlightBoxId == null) {
+      lastAutoOpenKey.current = null;
+      return;
+    }
+
+    if (!hierarchy) return;
+
+    const autoOpenKey = String(highlightBoxId) + ':' + String(highlightSlotId ?? '');
+    if (lastAutoOpenKey.current === autoOpenKey) return;
+
+    for (const rack of hierarchy.racks) {
+      for (const level of rack.levels) {
+        const box = level.boxes.find((entry) => entry.id === highlightBoxId);
+        if (!box) continue;
+
+        setSelectedBox(box);
+        setSelectedLayout(buildBoxLayoutPreview(rack, level, box));
+        setPanelOpen(true);
+        lastAutoOpenKey.current = autoOpenKey;
+        return;
+      }
+    }
+  }, [hierarchy, highlightBoxId, highlightSlotId]);
 
   const currentView = controlledView ?? view;
   const setCurrentView = onViewChange ?? setView;
@@ -470,9 +508,9 @@ export function RackOverviewSection({
       ) : !hierarchy?.racks.length ? (
         <p style={{ color: '#64748b' }}>{t('common:noData')}</p>
       ) : currentView === 'grid' ? (
-        <GridView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />
+        <GridView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} quantityMode={quantityMode} />
       ) : (
-        <TableView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} />
+        <TableView hierarchy={hierarchy} onBoxSelect={handleBoxSelect} quantityMode={quantityMode} />
       )}
 
       <BoxLayoutPanel
@@ -482,6 +520,7 @@ export function RackOverviewSection({
         initialLayout={selectedLayout}
         highlightBoxId={highlightBoxId}
         highlightSlotId={highlightSlotId}
+        quantityMode={quantityMode}
         onClose={() => {
           setPanelOpen(false);
           setSelectedBox(null);

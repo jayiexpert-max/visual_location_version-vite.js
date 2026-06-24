@@ -39,6 +39,7 @@ interface BoxLayoutPanelProps {
   initialLayout?: BoxLayout | null;
   highlightBoxId?: number;
   highlightSlotId?: number;
+  quantityMode?: 'stock' | 'puid';
   onClose: () => void;
 }
 
@@ -49,6 +50,7 @@ export function BoxLayoutPanel({
   initialLayout,
   highlightBoxId,
   highlightSlotId,
+  quantityMode = 'stock',
   onClose,
 }: BoxLayoutPanelProps) {
   const { t } = useTranslation(['pages', 'common']);
@@ -70,7 +72,6 @@ export function BoxLayoutPanel({
       setLayout(data);
     } catch (err) {
       setError(getErrorMessage(err, t('common:error'), t));
-      setLayout(null);
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ export function BoxLayoutPanel({
       }
       void loadLayout(
         boxId,
-        highlightBoxId && highlightSlotId && highlightBoxId === boxId ? highlightSlotId : undefined,
+        highlightBoxId != null && highlightSlotId != null && highlightBoxId === boxId ? highlightSlotId : undefined,
       );
     } else {
       setLayout(null);
@@ -147,8 +148,11 @@ export function BoxLayoutPanel({
   const occupiedCount = layout?.cells.filter((c) => c.product).length ?? 0;
   const totalSlots = layout?.cells.length ?? 0;
   const totalQty = layout?.cells.reduce(
-    (sum, cell) =>
-      sum + Math.max(cell.product?.qty ?? 0, normalizeBoxLayoutPuids(cell.puids).length),
+    (sum, cell) => {
+      const puidQty = normalizeBoxLayoutPuids(cell.puids).length;
+      const stockQty = cell.product?.qty ?? 0;
+      return sum + (quantityMode === 'puid' ? puidQty || stockQty : Math.max(stockQty, puidQty));
+    },
     0,
   ) ?? 0;
 
@@ -240,7 +244,9 @@ export function BoxLayoutPanel({
                 const highlighted = cell.highlighted;
                 const busy = ioLoading === cell.slotId;
                 const puids = normalizeBoxLayoutPuids(cell.puids);
-                const qty = Math.max(cell.product?.qty ?? 0, puids.length);
+                const qty = quantityMode === 'puid'
+                  ? puids.length || cell.product?.qty || 0
+                  : Math.max(cell.product?.qty ?? 0, puids.length);
 
                 return (
                   <Tooltip

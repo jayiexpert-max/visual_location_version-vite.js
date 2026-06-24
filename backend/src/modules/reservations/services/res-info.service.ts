@@ -95,18 +95,21 @@ export class ResInfoService {
           const cpkReceived = cpkIsPuidReceivedFlag(p.Received);
 
           if (puid) {
-            const row = await this.findActiveLocalRow(puid);
-            p.is_already_in_db = Boolean(row);
+            const row = await this.findLocalRow(puid);
+            const inactive = row ? INACTIVE_STATUSES.has(String(row.statusName ?? '')) : false;
+            p.is_issued_out = inactive;
+            p.is_already_in_db = Boolean(row) && !inactive;
             p.QtyRemain = this.resolvePuidQtyRemain(
               p,
               cpkReceived,
-              row,
+              inactive ? null : row,
               itemRequestQty,
             );
             p.cpk_received = cpkReceived;
-            p.is_received = p.is_already_in_db || cpkReceived;
+            p.is_received = p.is_already_in_db || p.is_issued_out || cpkReceived;
           } else {
             p.is_already_in_db = false;
+            p.is_issued_out = false;
             p.cpk_received = cpkReceived;
             p.is_received = cpkReceived;
             p.QtyRemain = cpkPuidQtyRemain(p) ?? itemRequestQty;
@@ -119,7 +122,10 @@ export class ResInfoService {
       const resNoLog = String(apiData.ReservationNo ?? resNo);
       const allReceived = items.every((item) => {
         const puids = cpkAsPuidList(item.PUIDList ?? []);
-        return puids.length > 0 && puids.every((p) => Boolean(p.is_received));
+        return (
+          puids.length > 0 &&
+          puids.every((p) => Boolean(p.is_already_in_db) || Boolean(p.is_issued_out))
+        );
       });
 
       if (allReceived) {
@@ -150,14 +156,10 @@ export class ResInfoService {
     };
   }
 
-  private async findActiveLocalRow(puid: string) {
-    const row = await this.inventoryReceiveRepository.findByPuidCandidates(
+  private async findLocalRow(puid: string) {
+    return this.inventoryReceiveRepository.findByPuidCandidates(
       puidLookupCandidates(puid),
     );
-    if (!row) return null;
-    const status = String(row.statusName ?? '');
-    if (INACTIVE_STATUSES.has(status)) return null;
-    return row;
   }
 
   private resolvePuidQtyRemain(

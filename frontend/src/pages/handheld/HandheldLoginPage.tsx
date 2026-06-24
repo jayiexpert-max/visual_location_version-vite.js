@@ -6,8 +6,6 @@ import { useAuthHydrated } from '../../hooks/useAuthHydrated';
 import { getErrorMessage } from '../../services/apiClient';
 import '../../styles/handheld.css';
 
-const SCAN_DEBOUNCE_MS = 200;
-const SCAN_MIN_LEN = 4;
 const ENTER_DEDUPE_MS = 300;
 
 export function HandheldLoginPage() {
@@ -19,7 +17,6 @@ export function HandheldLoginPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastEnterRef = useRef(0);
 
   const loadingRef = useRef(false);
@@ -30,9 +27,6 @@ export function HandheldLoginPage() {
 
   useEffect(() => {
     inputRef.current?.focus();
-    return () => {
-      if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
-    };
   }, []);
 
   useEffect(() => {
@@ -83,18 +77,9 @@ export function HandheldLoginPage() {
     const cleaned = stripScanValue(value);
     setScanValue(cleaned);
 
-    if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
-
     if (hadSuffix && cleaned) {
       void submitLogin(cleaned);
-      return;
     }
-
-    scanDebounceRef.current = setTimeout(() => {
-      if (cleaned.length >= SCAN_MIN_LEN) {
-        void submitLogin(cleaned);
-      }
-    }, SCAN_DEBOUNCE_MS);
   };
 
   const handleEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {

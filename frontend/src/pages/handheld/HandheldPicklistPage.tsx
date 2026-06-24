@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,8 +7,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import * as cpkService from '../../services/cpkService';
 import { getErrorMessage } from '../../services/apiClient';
 import { translateApiMessage } from '../../utils/translateApiMessage';
-import { isHandheldHighlightBusy, sendHandheldHighlight } from '../../utils/handheldHighlight';
+import { isHandheldHighlightBusy, sendHandheldHighlight, sendHandheldPicklistIssueHighlight } from '../../utils/handheldHighlight';
 import { precheckIssuePuid } from '../../utils/picklistIssuePrecheck';
+import { issueStateFromItems } from '../../utils/picklistNotify';
 import {
   extractDetailMeta,
   getLinePart,
@@ -26,10 +28,12 @@ import {
 } from '../../utils/picklistIssueUtils';
 import { isCpkSuccess, type CpkResponseBody } from '../../types/cpk';
 import { usePicklistRealtimeSync } from '../../hooks/usePicklistRealtimeSync';
+import { invalidatePicklistNotify } from '../../hooks/usePicklistNotify';
 
 type AlertType = 'info' | 'success' | 'warning' | 'error';
 
 export function HandheldPicklistPage() {
+  const queryClient = useQueryClient();
   const { t } = useTranslation(['pages', 'common']);
   const { user, canAccess } = useAuth();
   const operator = user?.username ?? '';
@@ -95,17 +99,20 @@ export function HandheldPicklistPage() {
         }
         const parsed = parsePicklistDetailData(data);
         setDetailItems(parsed.items);
+        if (issueStateFromItems(parsed.items) === 'complete') {
+          invalidatePicklistNotify(queryClient);
+        }
         extractDetailMeta(data);
         setAlert({ type: 'info', text: t('pages:handheldPicklistScanHint') });
-        focusPuid();
       } catch (err) {
         setDetailItems([]);
         setAlert({ type: 'error', text: getErrorMessage(err, t('pages:picklistLoadDetailFail'), t) });
       } finally {
         setDetailLoading(false);
+        focusPuid();
       }
     },
-    [focusPuid, t],
+    [focusPuid, queryClient, t],
   );
 
   const selectPicklist = async (picklistId: string) => {
@@ -122,10 +129,13 @@ export function HandheldPicklistPage() {
       if (!isCpkSuccess(data) && data.Status) return;
       const parsed = parsePicklistDetailData(data);
       setDetailItems(parsed.items);
+      if (issueStateFromItems(parsed.items) === 'complete') {
+        invalidatePicklistNotify(queryClient);
+      }
     } catch {
       // remote sync — ignore transient errors
     }
-  }, [selectedId]);
+  }, [queryClient, selectedId]);
 
   const refreshPicklistListSilent = useCallback(() => {
     void loadOpenPicklists(true);
@@ -218,8 +228,15 @@ export function HandheldPicklistPage() {
 
       setAlert({ type: 'success', text: t('pages:picklistIssuedOk', { puid }) });
       setPuidInput('');
+      invalidatePicklistNotify(queryClient);
+      if (check.meta) {
+        try {
+          await sendHandheldPicklistIssueHighlight(check.meta, check.part);
+        } catch {
+          // non-fatal — issue already saved
+        }
+      }
       await loadDetail(selectedId);
-      focusPuid();
     } catch (err) {
       let msg = getErrorMessage(err, t('common:error'), t);
       if (axios.isAxiosError(err) && err.response?.data?.message) {
@@ -228,6 +245,7 @@ export function HandheldPicklistPage() {
       setAlert({ type: 'error', text: msg });
     } finally {
       setIssueBusy(false);
+      focusPuid();
     }
   };
 
@@ -325,6 +343,8 @@ export function HandheldPicklistPage() {
         {alert.text}
       </section>
 
+      <p className="hh-picklist-hint">{t('pages:handheldResTapLineHint')}</p>
+
       <div className="hh-picklist-scan-block">
         <label htmlFor="puidInput">{t('pages:handheldPicklistScanLabel')}</label>
         <input
@@ -352,8 +372,6 @@ export function HandheldPicklistPage() {
           {issueBusy ? t('common:loading') : t('pages:picklistIssueBtn')}
         </button>
       </div>
-
-      <p className="hh-picklist-hint">{t('pages:handheldResTapLineHint')}</p>
 
       <div className="hh-picklist-lines hh-picklist-lines-scroll">
         {detailLoading ? (

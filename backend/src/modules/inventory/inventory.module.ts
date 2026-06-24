@@ -21,6 +21,7 @@ import { InventoryService } from './services/inventory.service';
 import { ReceiveService } from './services/receive.service';
 import { SearchResolveService } from './services/search-resolve.service';
 import { ExpirationSyncService } from './services/expiration-sync.service';
+import { ExpirationAutoSyncService } from './services/expiration-auto-sync.service';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ExpirationSyncService } from './services/expiration-sync.service';
     HighlightService,
     SearchResolveService,
     ExpirationSyncService,
+    ExpirationAutoSyncService,
   ],
   exports: [
     InventoryReceiveRepository,

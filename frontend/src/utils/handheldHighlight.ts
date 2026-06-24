@@ -66,14 +66,21 @@ export async function sendHandheldHighlight(query: string): Promise<HandheldHigh
   }
 }
 
-/** TV + 3D + IO after receive — uses lookup meta when available. */
-export async function sendHandheldReceiveHighlight(
+/** TV + 3D + IO — highlight warehouse location for handheld save/issue flows. */
+export async function sendHandheldLocationHighlight(
   meta: inventoryService.InventoryLookupData,
-  partName?: string,
+  options?: {
+    partName?: string;
+    actionType?: string;
+    query?: string;
+  },
 ): Promise<void> {
+  const partName = options?.partName ?? meta.HanaPart;
+  const actionType = options?.actionType ?? 'highlight';
   const query =
-    normalizeHandheldHighlightQuery(meta.PUID) ||
-    normalizeHandheldHighlightQuery(partName ?? meta.HanaPart);
+    normalizeHandheldHighlightQuery(options?.query ?? meta.PUID) ||
+    normalizeHandheldHighlightQuery(partName);
+
   if (!query) return;
 
   if (meta.slot_id) {
@@ -81,23 +88,61 @@ export async function sendHandheldReceiveHighlight(
       await inventoryService.highlightLocation({ query, slotId: meta.slot_id });
       return;
     } catch {
-      // fall through to TV-only payload
+      // fall through
     }
   }
 
-  if (!meta.box_id) return;
+  try {
+    await inventoryService.highlightLocation({ query });
+    return;
+  } catch {
+    // fall through to direct TV payload or search-resolve
+  }
 
-  const { setTvHighlight } = tvService;
-  await setTvHighlight({
-    productName: partName || meta.HanaPart,
-    puid: meta.PUID,
-    boxId: meta.box_id,
-    slotId: meta.slot_id || undefined,
-    slotNo: meta.Loc_Slot || undefined,
-    rackName: meta.Loc_Shelf,
-    levelNo: Number(meta.Loc_Level) || undefined,
-    boxCode: meta.Loc_Box,
-    qty: meta.QtyRemain ?? meta.Qty ?? 0,
+  if (meta.box_id) {
+    await tvService.setTvHighlight({
+      productName: partName,
+      puid: meta.PUID,
+      boxId: meta.box_id,
+      slotId: meta.slot_id || undefined,
+      slotNo: meta.Loc_Slot || undefined,
+      rackName: meta.Loc_Shelf,
+      levelNo: Number(meta.Loc_Level) || undefined,
+      boxCode: meta.Loc_Box,
+      qty: meta.QtyRemain ?? meta.Qty ?? 0,
+      actionType,
+    });
+    return;
+  }
+
+  const resolved = await inventoryService.searchResolve(query);
+  if (resolved.status === 'success' && resolved.data) {
+    const data = resolved.data;
+    await inventoryService.highlightLocation({
+      query: data.hanaPart || query,
+      slotId: data.slotId,
+    });
+  }
+}
+
+/** TV + 3D + IO after receive — uses lookup meta when available. */
+export async function sendHandheldReceiveHighlight(
+  meta: inventoryService.InventoryLookupData,
+  partName?: string,
+): Promise<void> {
+  await sendHandheldLocationHighlight(meta, {
+    partName,
     actionType: 'receive',
+  });
+}
+
+/** TV + 3D + IO after picklist issue — shows where PUID was taken from. */
+export async function sendHandheldPicklistIssueHighlight(
+  meta: inventoryService.InventoryLookupData,
+  partName?: string,
+): Promise<void> {
+  await sendHandheldLocationHighlight(meta, {
+    partName,
+    actionType: 'picklist',
   });
 }

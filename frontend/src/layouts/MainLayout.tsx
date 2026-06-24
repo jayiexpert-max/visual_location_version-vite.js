@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { AppFactoryBar } from '../components/layout/AppFactoryBar';
 import { AppFactoryFooter } from '../components/layout/AppFactoryFooter';
 import { FactoryStatusBar } from '../components/layout/FactoryStatusBar';
+import { RouteErrorBoundary } from '../components/common/RouteErrorBoundary';
+import { RouteSuspense } from '../components/common/RouteSuspense';
 import { useShiftLogout } from '../hooks/useShiftLogout';
 import { MENU_ITEMS } from '../routes/menuConfig';
 
@@ -85,7 +87,11 @@ export function MainLayout() {
       />
       {showStatusBar && <FactoryStatusBar />}
       <main className={`fx-main${isDashboard ? ' fx-main--dashboard' : ''}${isReservation || isPicklist ? ' fx-main--flush' : ''}`}>
-        <Outlet />
+        <RouteErrorBoundary variant="factory">
+          <RouteSuspense variant="factory">
+            <Outlet />
+          </RouteSuspense>
+        </RouteErrorBoundary>
       </main>
       <AppFactoryFooter />
     </div>

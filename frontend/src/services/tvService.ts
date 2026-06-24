@@ -22,15 +22,12 @@ export interface TvHighlight {
 }
 
 export async function getTvHighlight(tvKey?: string): Promise<TvHighlight | null> {
-  if (tvKey) {
-    const { data } = await axios.get<ApiSuccessResponse<TvHighlight | null>>(
-      `${API_BASE}/tv/highlight`,
-      { headers: { 'X-TV-Kiosk-Key': tvKey } },
-    );
-    return data.data;
-  }
-  const { apiGet } = await import('./apiClient');
-  return apiGet<TvHighlight | null>('/tv/highlight');
+  const headers = tvKey ? { 'X-TV-Kiosk-Key': tvKey } : undefined;
+  const { data } = await axios.get<ApiSuccessResponse<TvHighlight | null>>(
+    `${API_BASE}/tv/highlight`,
+    headers ? { headers } : undefined,
+  );
+  return data.data;
 }
 
 export async function setTvHighlight(payload: Record<string, unknown>): Promise<TvHighlight> {

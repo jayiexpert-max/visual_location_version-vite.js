@@ -68,8 +68,16 @@ export interface BookingOutPreview {
   ExpirationDate: string;
   Location: string;
   cpk_effective_remain: number | null;
+  cpk_station_check: { Status: string; Message: string } | null;
   preview_sources: string[];
   booking_eligibility: Record<'STORE' | 'OTHER', BookingEligibility>;
+}
+
+export interface CpkBookingOutResponse {
+  Status?: string;
+  Message?: string;
+  Warnings?: unknown[];
+  [key: string]: unknown;
 }
 
 export async function getBookingOutPreview(puid: string): Promise<BookingOutPreview> {
@@ -80,7 +88,7 @@ export async function bookingOutPuid(payload: {
   puid: string;
   operator: string;
   destination: 'STORE' | 'OTHER';
-}): Promise<unknown> {
+}): Promise<CpkBookingOutResponse> {
   return apiPost('/cpk/booking-out', payload);
 }
 

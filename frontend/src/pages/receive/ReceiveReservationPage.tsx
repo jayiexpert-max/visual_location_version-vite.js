@@ -20,13 +20,15 @@ import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 import {
   formatExpireDate,
   formatPuidQtyRemain,
+  getPuidLineState,
   isPuidCpkReceived,
   isPuidExpired,
+  isPuidIssuedOut,
   isPuidLocallyReceived,
-  isPuidReceived,
   isResCompleted,
   normalizePuidInput,
   normalizeResNo,
+  RES_PUID_STATUS_I18N,
   resNoKey,
   type ResDetailData,
   type ResItemRow,
@@ -211,8 +213,20 @@ export function ReceiveReservationPage() {
     },
     onSuccess: async (result) => {
       const warnings = (result as { cpkWarnings?: string[] }).cpkWarnings;
-      if (warnings?.length) {
-        setCpkWarning(translateApiMessages(warnings, t));
+      const expiredNotice = verified?.isExpired
+        ? t('pages:resExpiredPuidNotice', {
+            puid: verified.puid,
+            date: formatExpireDate(verified.expiration),
+          })
+        : null;
+      const warningText = [
+        expiredNotice,
+        warnings?.length ? translateApiMessages(warnings, t) : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      if (warningText) {
+        setCpkWarning(warningText);
         setTimeout(() => setCpkWarning(null), 10000);
       }
 
@@ -243,10 +257,7 @@ export function ReceiveReservationPage() {
             const detail = await reservationsService.getReservationDetail(resNo);
             if (detail.status !== 'success' || !detail.data) return;
             const items = detail.data.Items ?? [];
-            const completed = items.length > 0 && items.every((item) => {
-              const puids = item.PUIDList ?? [];
-              return puids.length > 0 && puids.every((p) => isPuidReceived(p));
-            });
+            const completed = isResCompleted(items);
             if (!completed) return;
 
             autoSyncedRes.current.add(resNo);
@@ -307,6 +318,35 @@ export function ReceiveReservationPage() {
     return null;
   };
 
+  const rejectDuplicateScan = (puid: string) => {
+    setVerified(null);
+    setPuidInput('');
+    setVerifyError(t('pages:resPuidDuplicateScan', { puid }));
+    setTimeout(() => puidInputRef.current?.focus(), 50);
+  };
+
+  const rejectIssuedScan = (_puid: string) => {
+    setVerified(null);
+    setPuidInput('');
+    setVerifyError(null);
+    setTimeout(() => puidInputRef.current?.focus(), 50);
+  };
+
+  const handlePuidInputChange = (raw: string) => {
+    const next = normalizePuidInput(raw);
+    setPuidInput(next);
+    if (!next || !currentResData) return;
+    const match = findPuidInRes(next);
+    if (!match) return;
+    if (isPuidIssuedOut(match.puidRow)) {
+      rejectIssuedScan(next);
+      return;
+    }
+    if (isPuidLocallyReceived(match.puidRow)) {
+      rejectDuplicateScan(next);
+    }
+  };
+
   const handleVerify = async () => {
     const puid = normalizePuidInput(puidInput);
     setPuidInput(puid);
@@ -319,6 +359,18 @@ export function ReceiveReservationPage() {
     const match = findPuidInRes(puid);
     if (!match) {
       setVerifyError(t('pages:resPuidNotInRes'));
+      setVerifyLoading(false);
+      return;
+    }
+
+    if (isPuidIssuedOut(match.puidRow)) {
+      rejectIssuedScan(puid);
+      setVerifyLoading(false);
+      return;
+    }
+
+    if (isPuidLocallyReceived(match.puidRow)) {
+      rejectDuplicateScan(puid);
       setVerifyLoading(false);
       return;
     }
@@ -531,7 +583,7 @@ export function ReceiveReservationPage() {
                   className="fx-scan-input"
                   placeholder={t('pages:resPuidScanPlaceholder')}
                   value={puidInput}
-                  onChange={(e) => setPuidInput(e.target.value.toUpperCase().replace(/^VL/i, ''))}
+                  onChange={(e) => handlePuidInputChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -679,7 +731,11 @@ export function ReceiveReservationPage() {
                   <tbody>
                     {items.map((item, idx) => {
                       const puids = item.PUIDList ?? [];
-                      const receivedCount = puids.filter((p) => isPuidReceived(p)).length;
+                      const receivedCount = puids.filter((p) => isPuidLocallyReceived(p)).length;
+                      const pendingCount = puids.filter((p) => {
+                        const state = getPuidLineState(p);
+                        return state === 'pending' || state === 'cpkOnly';
+                      }).length;
                       return (
                         <tr key={`${item.PartNumber}-${idx}`}>
                           <td>{item.ItemNo ?? '—'}</td>
@@ -687,7 +743,7 @@ export function ReceiveReservationPage() {
                           <td>{item.RequestQty ?? '—'}</td>
                           <td>{puids.length}</td>
                           <td>{receivedCount}</td>
-                          <td>{puids.length ? Math.max(0, puids.length - receivedCount) : '—'}</td>
+                          <td>{puids.length ? pendingCount : '—'}</td>
                         </tr>
                       );
                     })}
@@ -734,9 +790,17 @@ export function ReceiveReservationPage() {
                       }
 
                       return puids.map((p, pIdx) => {
-                        const received = isPuidReceived(p);
+                        const lineState = getPuidLineState(p);
+                        const rowClass =
+                          lineState === 'received'
+                            ? 'fx-res-row-received'
+                            : lineState === 'issued'
+                              ? 'fx-res-row-issued'
+                              : lineState === 'cpkOnly'
+                                ? 'fx-res-row-cpk-only'
+                                : '';
                         return (
-                          <tr key={`${itemIdx}-${pIdx}`} className={received ? 'fx-res-row-received' : ''}>
+                          <tr key={`${itemIdx}-${pIdx}`} className={rowClass}>
                             <td>{item.ItemNo ?? '—'}</td>
                             <td>
                               <div className="fx-res-part-name">{item.PartNumber ?? '—'}</div>
@@ -746,20 +810,26 @@ export function ReceiveReservationPage() {
                             <td className="fx-res-qty-accent">{formatPuidQtyRemain(p, item)}</td>
                             <td>{p.BatchNumber ?? '—'}</td>
                             <td>
-                              {received ? (
+                              {lineState === 'received' ? (
+                                <span className="fx-res-puid-status--received">
+                                  <CheckCircleIcon fontSize="inherit" /> {t(RES_PUID_STATUS_I18N.received)}
+                                </span>
+                              ) : lineState === 'issued' ? (
+                                <span className="fx-res-puid-status--issued">
+                                  <CheckCircleIcon fontSize="inherit" /> {t(RES_PUID_STATUS_I18N.issued)}
+                                </span>
+                              ) : lineState === 'cpkOnly' ? (
                                 <>
-                                  <span className="fx-res-puid-status--received">
-                                    <CheckCircleIcon fontSize="inherit" /> RECEIVED
+                                  <span className="fx-res-puid-status--not-warehouse">
+                                    <ErrorOutlineIcon fontSize="inherit" /> {t(RES_PUID_STATUS_I18N.cpkOnly)}
                                   </span>
-                                  {isPuidCpkReceived(p) && !isPuidLocallyReceived(p) && (
-                                    <div className="fx-res-puid-status__hint">
-                                      {t('pages:resCpkReceivedHint')}
-                                    </div>
-                                  )}
+                                  <div className="fx-res-puid-status__hint">
+                                    {t('pages:resCpkReceivedHint')}
+                                  </div>
                                 </>
                               ) : (
                                 <span className="fx-res-puid-status--pending">
-                                  <ScheduleIcon fontSize="inherit" /> PENDING
+                                  <ScheduleIcon fontSize="inherit" /> {t(RES_PUID_STATUS_I18N.pending)}
                                 </span>
                               )}
                               <div className="fx-res-part-sub" style={{ marginTop: 4 }}>

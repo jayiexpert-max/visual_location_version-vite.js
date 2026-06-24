@@ -10,6 +10,11 @@ export interface BookingEligibility {
   blockers_th: string[];
 }
 
+export interface CpkStationCheckSummary {
+  Status: string;
+  Message: string;
+}
+
 export interface BookingOutPreviewData {
   PUID: string;
   HanaPart: string;
@@ -26,6 +31,7 @@ export interface BookingOutPreviewData {
   DateCode: string;
   Location: string;
   cpk_effective_remain: number | null;
+  cpk_station_check: CpkStationCheckSummary | null;
   preview_sources: string[];
   booking_eligibility: Record<'STORE' | 'OTHER', BookingEligibility>;
 }
@@ -61,14 +67,20 @@ export class BookingOutPreviewService {
     if (d.Loc_Shelf || d.slot_id) sources.add('local');
 
     let cpkEffectiveRemain: number | null = null;
+    let cpkStationCheck: CpkStationCheckSummary | null = null;
     try {
       const cpkStarted = Date.now();
-      const station = await this.cpkService.stationInvenCheck({
+      const station = await this.cpkService.stationInvenCheckPassthrough({
         PUID: puid,
         PartNumber: d.HanaPart || undefined,
       });
       this.logger.debug(`booking-out stationInvenCheck ${Date.now() - cpkStarted}ms`);
       if (station && typeof station === 'object') {
+        const status = String(station.Status ?? '').trim().toUpperCase();
+        const message = String(station.Message ?? '').trim();
+        if (status || message) {
+          cpkStationCheck = { Status: status || '?', Message: message };
+        }
         const qty = Number(
           (station as Record<string, unknown>).Quantity ??
             (station as Record<string, unknown>).Qty ??
@@ -76,6 +88,8 @@ export class BookingOutPreviewService {
         );
         if (!Number.isNaN(qty)) {
           cpkEffectiveRemain = qty;
+        }
+        if (status === 'S') {
           sources.add('cpk_station');
         }
       }
@@ -109,14 +123,25 @@ export class BookingOutPreviewService {
       DateCode: d.DateCode ?? '',
       Location: locationParts.join(' '),
       cpk_effective_remain: cpkEffectiveRemain,
+      cpk_station_check: cpkStationCheck,
       preview_sources: [...sources],
       booking_eligibility: {
         STORE: this.eligibility(
-          { ...d, cpk_effective_remain: cpkEffectiveRemain, preview_sources: [...sources] },
+          {
+            ...d,
+            cpk_effective_remain: cpkEffectiveRemain,
+            preview_sources: [...sources],
+            cpk_station_check: cpkStationCheck,
+          },
           'STORE',
         ),
         OTHER: this.eligibility(
-          { ...d, cpk_effective_remain: cpkEffectiveRemain, preview_sources: [...sources] },
+          {
+            ...d,
+            cpk_effective_remain: cpkEffectiveRemain,
+            preview_sources: [...sources],
+            cpk_station_check: cpkStationCheck,
+          },
           'OTHER',
         ),
       },
@@ -141,17 +166,24 @@ export class BookingOutPreviewService {
   private eligibility(
     found: {
       McID?: string;
-      ExpirationDate?: string;
       cpk_effective_remain?: number | null;
       preview_sources?: string[];
+      cpk_station_check?: CpkStationCheckSummary | null;
     },
     destination: 'STORE' | 'OTHER',
   ): BookingEligibility {
     const blockers: string[] = [];
     const blockersTh: string[] = [];
     const sources = found.preview_sources ?? [];
+    const stationStatus = String(
+      (found as { cpk_station_check?: { Status?: string } }).cpk_station_check?.Status ?? '',
+    )
+      .trim()
+      .toUpperCase();
     const inStation =
-      sources.includes('cpk_station') || found.cpk_effective_remain != null;
+      stationStatus === 'S' ||
+      sources.includes('cpk_station') ||
+      found.cpk_effective_remain != null;
 
     if (!inStation) {
       blockers.push(
@@ -171,24 +203,6 @@ export class BookingOutPreviewService {
       blockersTh.push(
         `Service Rejected: PUID ไม่ได้อยู่ในพื้นที่ Local Stock ของสถานีนี้ (McID ${puidMcId} ≠ สถานี ${stationMcId})`,
       );
-    }
-
-    if (destination === 'STORE') {
-      const exp = String(found.ExpirationDate ?? '').trim();
-      if (exp) {
-        const expTs = Date.parse(exp);
-        if (!Number.isNaN(expTs)) {
-          const days = Math.floor((expTs - Date.now()) / 86400000);
-          if (days < 31) {
-            blockers.push(
-              'Service Rejected: PUID expires within 31 days and cannot be sent to STORE',
-            );
-            blockersTh.push(
-              'Service Rejected: PUID ใกล้หมดอายุ (ภายใน 31 วัน) ส่งไป STORE ไม่ได้',
-            );
-          }
-        }
-      }
     }
 
     return {

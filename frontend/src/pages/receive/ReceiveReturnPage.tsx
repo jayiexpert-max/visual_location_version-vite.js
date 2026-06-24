@@ -10,8 +10,6 @@ import { translateApiMessage, translateApiMessages } from '../../utils/translate
 import { formatExpireDate, isPuidExpired, normalizePuidInput } from '../../utils/reservationUtils';
 import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
-const HIGHLIGHT_COUNTDOWN_SEC = 30;
-
 type FetchMessageKind = 'success' | 'warning' | 'idle';
 
 interface FetchedMeta extends inventoryService.InventoryLookupData {
@@ -61,14 +59,12 @@ export function ReceiveReturnPage() {
   const [flashMsg, setFlashMsg] = useState<{ kind: 'success' | 'warning'; text: string } | null>(
     null,
   );
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [successHighlight, setSuccessHighlight] = useState<FetchedMeta | null>(null);
 
   useEffect(() => {
     puidRef.current?.focus();
   }, []);
 
-  const resetForm = useCallback(() => {
+  const clearFormInputs = useCallback(() => {
     setPuid('');
     setReceiveDate(toDatetimeLocalValue());
     setHanaPart('');
@@ -77,22 +73,14 @@ export function ReceiveReturnPage() {
     setQtyRemain('');
     setMeta(null);
     setFetchMsg({ kind: 'idle', html: '' });
-    setFlashMsg(null);
-    setCountdown(null);
-    setSuccessHighlight(null);
     setReservationNo(resNoFromUrl);
     setTimeout(() => puidRef.current?.focus(), 50);
   }, [resNoFromUrl]);
 
-  useEffect(() => {
-    if (countdown === null) return undefined;
-    if (countdown <= 0) {
-      resetForm();
-      return undefined;
-    }
-    const timer = window.setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : null)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [countdown, resetForm]);
+  const resetForm = useCallback(() => {
+    clearFormInputs();
+    setFlashMsg(null);
+  }, [clearFormInputs]);
 
   const handlePuidInput = (value: string) => {
     setPuid(normalizePuidInput(value));
@@ -270,33 +258,34 @@ export function ReceiveReturnPage() {
       if (result.cpkWarnings?.length) {
         message += ` ${translateApiMessages(result.cpkWarnings, t)}`;
       }
+      message += ` — ${t('pages:addStockStoredAt')}: ${formatLocationLine(meta)} (PUID: ${normalized})`;
 
-      setFlashMsg({ kind: 'success', text: message });
-      setSuccessHighlight(meta);
-      setCountdown(HIGHLIGHT_COUNTDOWN_SEC);
-
+      const highlightMeta = meta;
       void tvService
         .setTvHighlight({
           productName: hanaPart.trim(),
           puid: normalized,
-          boxId: meta.box_id,
-          slotId: meta.slot_id || undefined,
-          slotNo: meta.Loc_Slot || undefined,
-          rackName: meta.Loc_Shelf,
-          levelNo: Number(meta.Loc_Level) || undefined,
-          boxCode: meta.Loc_Box,
+          boxId: highlightMeta.box_id,
+          slotId: highlightMeta.slot_id || undefined,
+          slotNo: highlightMeta.Loc_Slot || undefined,
+          rackName: highlightMeta.Loc_Shelf,
+          levelNo: Number(highlightMeta.Loc_Level) || undefined,
+          boxCode: highlightMeta.Loc_Box,
           qty: remain,
           actionType: 'receive',
         })
         .catch(() => undefined);
-      if (meta.box_id) {
+      if (highlightMeta.box_id) {
         void ioService
           .ioHighlight({
-            boxId: meta.box_id,
-            slotNo: meta.Loc_Slot,
+            boxId: highlightMeta.box_id,
+            slotNo: highlightMeta.Loc_Slot,
           })
           .catch(() => undefined);
       }
+
+      clearFormInputs();
+      setFlashMsg({ kind: 'success', text: message });
     } catch (err) {
       setFlashMsg({
         kind: 'warning',
@@ -323,14 +312,8 @@ export function ReceiveReturnPage() {
       {flashMsg && (
         <div className={`message ${flashMsg.kind}`}>{flashMsg.text}</div>
       )}
-      {flashMsg?.kind === 'success' && countdown !== null && (
-        <div className="fx-countdown-hint">
-          {t('pages:addStockCountdownHint')}{' '}
-          <span className="fx-countdown">{countdown}</span> {t('pages:addStockCountdownSec')}
-        </div>
-      )}
 
-      {fetchMsg.kind !== 'idle' && (
+      {fetchMsg.kind !== 'idle' && !flashMsg && (
         <div
           className={`fx-page-message message ${fetchMsg.kind === 'success' ? 'success' : 'warning'}`}
           dangerouslySetInnerHTML={{ __html: fetchMsg.html }}
@@ -343,19 +326,6 @@ export function ReceiveReturnPage() {
             puid,
             date: formatExpireDate(meta.ExpirationDate),
           })}
-        </div>
-      )}
-
-      {successHighlight && flashMsg?.kind === 'success' && (
-        <div className="fx-page-message message success">
-          📍 {t('pages:addStockStoredAt')}: <b>{successHighlight.Loc_Shelf}</b> →{' '}
-          <b>{t('pages:addStockLevel', { level: successHighlight.Loc_Level ?? '—' })}</b> →{' '}
-          <b>{successHighlight.Loc_Box}</b> →{' '}
-          <b>{t('pages:addStockSlot', { slot: successHighlight.Loc_Slot ?? '—' })}</b>
-          <br />
-          PUID: <b style={{ fontFamily: 'monospace' }}>{puid}</b>
-          <br />
-          <small>📺 {t('pages:addStockTvShown')}</small>
         </div>
       )}
 

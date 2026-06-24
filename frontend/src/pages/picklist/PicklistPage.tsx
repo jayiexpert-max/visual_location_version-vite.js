@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
@@ -46,6 +47,7 @@ import {
 } from '../../utils/picklistIssueUtils';
 import { isCpkSuccess, type CpkResponseBody } from '../../types/cpk';
 import { usePicklistRealtimeSync } from '../../hooks/usePicklistRealtimeSync';
+import { invalidatePicklistNotify } from '../../hooks/usePicklistNotify';
 import { useServiceReadiness } from '../../hooks/useServiceReadiness';
 
 const POLL_MS = 45_000;
@@ -118,6 +120,7 @@ function IssueStatusBadges({
 }
 
 export function PicklistPage() {
+  const queryClient = useQueryClient();
   const { t } = useTranslation(['pages', 'common']);
   const { user } = useAuth();
   const operator = user?.username ?? '';
@@ -279,7 +282,11 @@ export function PicklistPage() {
       }
       setDetailItems(parsed.items);
       setDetailMeta(meta);
-      setPicklistIssueState(picklistId, issueStateFromItems(parsed.items));
+      const issueState = issueStateFromItems(parsed.items);
+      setPicklistIssueState(picklistId, issueState);
+      if (issueState === 'complete') {
+        invalidatePicklistNotify(queryClient);
+      }
 
       if (meta?.RequiredOnlyRequested && meta.LineCountRaw != null && meta.LineCount != null && meta.LineCountRaw > meta.LineCount) {
         showAlert(
@@ -293,7 +300,7 @@ export function PicklistPage() {
 
       focusPuid();
     },
-    [focusPuid, hideAlert, setPicklistIssueState, showAlert, t],
+    [focusPuid, hideAlert, queryClient, setPicklistIssueState, showAlert, t],
   );
 
   const reloadDetail = useCallback(async () => {
@@ -488,6 +495,7 @@ export function PicklistPage() {
       }
       setSelectedPuid(puid);
       setPuidInput('');
+      invalidatePicklistNotify(queryClient);
       window.setTimeout(() => void reloadDetail(), 2500);
       window.setTimeout(() => void loadOpenPicklists(false, true), 2500);
     } catch (err) {
@@ -582,6 +590,7 @@ export function PicklistPage() {
       setCloseModalOpen(false);
       setKitsNote('');
       showAlert('main', 'success', t('pages:picklistClosedOk', { id: selectedPicklistId }));
+      invalidatePicklistNotify(queryClient);
       setSelectedPicklistId('');
       setDetailItems([]);
       void loadOpenPicklists(true);

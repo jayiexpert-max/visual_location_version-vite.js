@@ -225,6 +225,19 @@ export class CpkService {
     return this.postAuthenticated('StationInvenCheck', payload);
   }
 
+  /** Returns CPK body even when Status=E (for preview / diagnostics). */
+  async stationInvenCheckPassthrough(
+    dto: StationInvenCheckDto,
+  ): Promise<CpkResponseBody> {
+    this.cpkTokenService.requireMcIdConfigured();
+    const { picklistId, ...rest } = dto;
+    const payload: Record<string, unknown> = { ...rest };
+    if (picklistId) {
+      payload.PicklistID = picklistId;
+    }
+    return this.passthroughPost('StationInvenCheck', payload);
+  }
+
   async bookingOutPuid(dto: BookingOutPuidDto): Promise<CpkResponseBody> {
     this.cpkTokenService.requireMcIdConfigured();
     return this.postAuthenticated('BookingOutPUID', {
@@ -274,6 +287,20 @@ export class CpkService {
   ): Promise<CpkResponseBody> {
     const result = await this.postAuthenticatedRaw(logical, body);
     return this.unwrapBody(result);
+  }
+
+  private async passthroughPost(
+    logical: CpkLogicalEndpoint,
+    body: Record<string, unknown>,
+  ): Promise<CpkResponseBody> {
+    const result = await this.postAuthenticatedRaw(logical, body);
+    if (typeof result.data === 'object' && result.data !== null) {
+      return result.data;
+    }
+    return {
+      Status: result.cpkStatus ?? 'E',
+      Message: result.cpkMessage ?? result.error ?? 'CPK request failed',
+    };
   }
 
   private unwrapBody(result: CpkHttpResult): CpkResponseBody {

@@ -1,5 +1,5 @@
 import { buildKioskUrl } from '../utils/kioskUrl';
-import type { MenuKey } from '@visual-location/shared';
+import type { MenuKey, UserRole } from '@visual-location/shared';
 import type { SvgIconComponent } from '@mui/icons-material';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
@@ -28,6 +28,8 @@ export interface DashboardModule {
   iconBg: string;
   iconColor: string;
   badgeKey?: 'picklist';
+  /** When set, dashboard card is shown only for these roles (handheld UI stays open to all). */
+  dashboardRoles?: readonly UserRole[];
 }
 
 const HANA_URL =
@@ -164,6 +166,8 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
   {
     key: 'handheld',
     path: '/handheld',
+    external: true,
+    dashboardRoles: ['manage'],
     icon: PhoneAndroidIcon,
     hoverColor: '#38bdf8',
     iconBg: '#0f172a',

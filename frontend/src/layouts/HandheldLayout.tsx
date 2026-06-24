@@ -3,6 +3,8 @@ import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAuthHydrated } from '../hooks/useAuthHydrated';
 import { useHandheldIdle } from '../hooks/useHandheldIdle';
+import { RouteErrorBoundary } from '../components/common/RouteErrorBoundary';
+import { RouteSuspense } from '../components/common/RouteSuspense';
 import '../styles/handheld.css';
 
 export function HandheldLayout() {
@@ -35,7 +37,11 @@ export function HandheldLayout() {
   return (
     <div className="handheld-app">
       <main className="handheld-main">
-        <Outlet />
+        <RouteErrorBoundary variant="handheld">
+          <RouteSuspense variant="handheld">
+            <Outlet />
+          </RouteSuspense>
+        </RouteErrorBoundary>
       </main>
     </div>
   );
